@@ -10,9 +10,23 @@ api_id = '25270021'
 api_hash = 'e27d91ad37959d54eb5c1d454d567afa'
 
 # 你想要下载视频的Telegram群组或频道用户名
-group_username =  -1002191116758
+# group_username =  -1001981879084
 # 视频保存目录
-download_path = 'D:\\TelegramDownloads\\控r资源分享群-2191116758'
+# download_path = 'D:\\TelegramDownloads\\Rush无脑控吸资源群-1001981879084'
+
+# 你想要下载视频的Telegram群组或频道用户名
+# group_username =  'weiniduba1'
+# 视频保存目录
+# download_path = 'D:\\TelegramDownloads\\为你独霸-weiniduba1'
+
+#group_username =  -1002221790497
+#download_path = 'D:\\TelegramDownloads\\粗口控r资源-2221790497'
+
+#group_username =  'tuohuang1s'
+#download_path = 'D:\\TelegramDownloads\\拓荒哥乐园-tuohuang1s'
+
+group_username = -1001662972970
+download_path = 'D:\\TelegramDownloads\\搜同小说避难所-tuohuang1s'
 
 # 确保保存目录存在
 if not os.path.exists(download_path):
