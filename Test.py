@@ -16,8 +16,10 @@ plt.rcParams['font.sans-serif'] = ['SimHei']
 x = result_df.index
 y = result_df.values
 
+colors = ['red', 'green', 'blue']  # 自定义颜色列表
+plt.gca().set_facecolor('lightgray')  # 例如设置为浅灰色
+plt.barh(x,y,color=colors, edgecolor='black', linewidth=0.5, alpha=0.8)
 
-plt.barh(x,y)
 
 # 计算日均存款值的汇总数
 total_balance = sum(y)
@@ -34,6 +36,8 @@ plt.xlabel('日均存款（亿元）')
 plt.ylabel('行业')
 #用于旋转 x 轴标签以更好地显示
 plt.xticks(rotation=60) 
+plt.xlim(0, max(y) * 1.2)  # 根据数据适当调整 x 轴范围
+plt.yticks(range(len(x)), x)  # 调整 y 轴刻度标签
 
 # 显示图形
 plt.show()
