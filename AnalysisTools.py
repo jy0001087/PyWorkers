@@ -49,23 +49,42 @@ def print_branch_stats(selected_data, value):
     """
     打印分行的统计信息
     """
-    selected_data = selected_data.groupby('一级行业').agg({'日均_current': 'sum', '日均变动': 'sum'}).sort_values(by='日均_current', ascending=False)
     # 将日均和日均变动数据保留两位小数
     selected_data.loc[:, '日均_current'] = selected_data['日均_current'].round(2)
     selected_data.loc[:, '日均变动'] = selected_data['日均变动'].round(2)
+    selected_data_grouped = selected_data.groupby('一级行业').agg({'日均_current': 'sum', '日均变动': 'sum'}).sort_values(by='日均_current', ascending=False)
 
-    total_branchdaily = selected_data['日均_current'].sum()
-    total_branchDailyChange = selected_data['日均变动'].sum()
+    total_branchdaily = selected_data_grouped['日均_current'].sum()
+    total_branchDailyChange = selected_data_grouped['日均变动'].sum()
 
     change_description = get_change_description(total_branchDailyChange)  # 获取分行总变动的描述
     print(f"输入的分行 '{value}' 的统计结果：")
     print(f"{value}当前机构客户存款为{total_branchdaily}亿元，{change_description}:{total_branchDailyChange}亿元")
-    for index, row in selected_data.iterrows():
+    for index, row in selected_data_grouped.iterrows():
         change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
         if change_description_row!= "较年初无变化":
             print(f"{index}行业，日均存款：{row['日均_current']}亿元，{change_description_row}: {row['日均变动']}亿元")
         else :
             print(f"{index}行业，日均存款：{row['日均_current']}亿元，{change_description_row}")
+
+        sort_data = selected_data[selected_data['一级行业'] == index]
+        sorted_data = sort_data.sort_values(by='日均变动')
+        top_5 = sorted_data.head(5)
+        bottom_5 = sorted_data.tail(5).iloc[::-1]
+        if  top_5.shape[0] > 0:
+            print("日均下降前5名分别为：")
+            for index, row in top_5.iterrows():
+                change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
+                if change_description_row == "较年初下降":
+                    print(f"{row['客户名称']}，{change_description_row}{row['日均变动']}亿元")
+
+        if  bottom_5.shape[0] > 0:
+            print("日均提升前5名分别为：")
+            for index, row in bottom_5.iterrows():
+                change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
+                if change_description_row == "较年初新增":
+                    print(f"{row['客户名称']}，{change_description_row}{row['日均变动']}亿元")
+        
 
 def calculate_sum_by_industry(excel_path):
     root = tk.Tk()
