@@ -71,15 +71,20 @@ def print_branch_stats(selected_data, value):
         sorted_data = sort_data.sort_values(by='日均变动')
         top_5 = sorted_data.head(5)
         bottom_5 = sorted_data.tail(5).iloc[::-1]
-        if  top_5.shape[0] > 0:
-            print("日均下降前5名分别为：")
+
+        # 计算日均变动大于 0 的条数
+        count_positive_change = sum(1 for _, row in top_5.iterrows() if row['日均变动'] < 0)
+        if count_positive_change > 0:
+            print("日均下降前", count_positive_change, "名分别为：")
             for index, row in top_5.iterrows():
                 change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
                 if change_description_row == "较年初下降":
                     print(f"{row['客户名称']}，{change_description_row}{row['日均变动']}亿元")
 
-        if  bottom_5.shape[0] > 0:
-            print("日均提升前5名分别为：")
+        # 计算日均变动大于 0 的条数
+        count_positive_change = sum(1 for _, row in bottom_5.iterrows() if row['日均变动'] > 0)
+        if count_positive_change > 0:
+            print("日均提升前", count_positive_change, "名分别为：")
             for index, row in bottom_5.iterrows():
                 change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
                 if change_description_row == "较年初新增":
