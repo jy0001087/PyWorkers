@@ -72,6 +72,14 @@ def print_branch_stats(selected_data, value):
             logging.info(f"{index}行业，日均存款：{row['日均_current']:.2f}亿元，{change_description_row}")
 
         sort_data = selected_data[selected_data['一级行业'] == index]
+        sorted_data = sort_data.sort_values(by='日均_current', ascending=False)  # 按日均存款降序排序
+        top_5 = sorted_data.head(5)  # 获取前 5 名
+
+        logging.info(f"{index}行业，日均存款前 5 名分别为：")
+        for _, row in top_5.iterrows():
+            logging.info(f"^^^^^{row['客户名称']}，日均存款：{row['日均_current']:.2f}亿元")
+
+        sort_data = selected_data[selected_data['一级行业'] == index]
         sorted_data = sort_data.sort_values(by='日均变动')
         top_5 = sorted_data.head(5)
         bottom_5 = sorted_data.tail(5).iloc[::-1]
