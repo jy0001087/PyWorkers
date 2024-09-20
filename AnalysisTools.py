@@ -1,6 +1,10 @@
 import pandas as pd
 import tkinter as tk
 from tkinter import simpledialog
+import logging
+
+# 配置日志
+logging.basicConfig(filename='output.log', level=logging.INFO, format='%(message)s', filemode='w')
 
 def get_change_description(change_value):
     """
@@ -29,21 +33,21 @@ def print_industry_stats(selected_data, value):
     bottom_5 = sorted_data.tail(5).iloc[::-1]
 
     change_description = get_change_description(total_change)  # 获取总变动的描述
-    print(f" 全行{value}行业的当前日均总计为: {total_daily}亿元，{change_description}")
-    print("日均下降前5名分别为：")
+    logging.info(f" 全行{value}行业的当前日均总计为: {total_daily:.2f}亿元，{change_description}")
+    logging.info("日均下降前5名分别为：")
     for index, row in top_5.iterrows():
         change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
         if change_description_row!= "较年初无变化":
-            print(f"{row['分行']}，{row['客户名称']}，{change_description_row}{row['日均变动']}亿元")
+            logging.info(f"{row['分行']}，{row['客户名称']}，{change_description_row}{row['日均变动']:.2f}亿元")
         else :
-            print(f"{row['分行']}，{row['客户名称']}，{change_description_row}")
-    print("日均提升前5名分别为：")
+            logging.info(f"{row['分行']}，{row['客户名称']}，{change_description_row}")
+    logging.info("日均提升前5名分别为：")
     for index, row in bottom_5.iterrows():
         change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
         if change_description_row!= "较年初无变化":
-            print(f"{row['分行']}，{row['客户名称']}，{change_description_row}{row['日均变动']}亿元")
+            logging.info(f"{row['分行']}，{row['客户名称']}，{change_description_row}{row['日均变动']:.2f}亿元")
         else :
-            print(f"{row['分行']}，{row['客户名称']}，{change_description_row}")
+            logging.info(f"{row['分行']}，{row['客户名称']}，{change_description_row}")
 
 def print_branch_stats(selected_data, value):
     """
@@ -58,14 +62,14 @@ def print_branch_stats(selected_data, value):
     total_branchDailyChange = selected_data_grouped['日均变动'].sum()
 
     change_description = get_change_description(total_branchDailyChange)  # 获取分行总变动的描述
-    print(f"输入的分行 '{value}' 的统计结果：")
-    print(f"{value}当前机构客户存款为{total_branchdaily}亿元，{change_description}:{total_branchDailyChange}亿元")
+    logging.info(f"输入的分行 '{value}' 的统计结果：")
+    logging.info(f"{value}当前机构客户存款为{total_branchdaily:.2f}亿元，{change_description}:{total_branchDailyChange:.2f}亿元")
     for index, row in selected_data_grouped.iterrows():
         change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
         if change_description_row!= "较年初无变化":
-            print(f"{index}行业，日均存款：{row['日均_current']}亿元，{change_description_row}: {row['日均变动']}亿元")
+            logging.info(f"{index}行业，日均存款：{row['日均_current']:.2f}亿元，{change_description_row}: {row['日均变动']:.2f}亿元")
         else :
-            print(f"{index}行业，日均存款：{row['日均_current']}亿元，{change_description_row}")
+            logging.info(f"{index}行业，日均存款：{row['日均_current']:.2f}亿元，{change_description_row}")
 
         sort_data = selected_data[selected_data['一级行业'] == index]
         sorted_data = sort_data.sort_values(by='日均变动')
@@ -75,21 +79,20 @@ def print_branch_stats(selected_data, value):
         # 计算日均变动大于 0 的条数
         count_positive_change = sum(1 for _, row in top_5.iterrows() if row['日均变动'] < 0)
         if count_positive_change > 0:
-            print("日均下降前", count_positive_change, "名分别为：")
+            logging.info(f"日均下降前{count_positive_change}名分别为：")
             for index, row in top_5.iterrows():
                 change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
                 if change_description_row == "较年初下降":
-                    print(f"{row['客户名称']}，{change_description_row}{row['日均变动']}亿元")
+                    logging.info(f"-----{row['客户名称']}，{change_description_row}{row['日均变动']:.2f}亿元")
 
         # 计算日均变动大于 0 的条数
         count_positive_change = sum(1 for _, row in bottom_5.iterrows() if row['日均变动'] > 0)
         if count_positive_change > 0:
-            print("日均提升前", count_positive_change, "名分别为：")
+            logging.info(f"日均提升前{count_positive_change}名分别为：")
             for index, row in bottom_5.iterrows():
                 change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
                 if change_description_row == "较年初新增":
-                    print(f"{row['客户名称']}，{change_description_row}{row['日均变动']}亿元")
-        
+                    logging.info(f"+++++{row['客户名称']}，{change_description_row}{row['日均变动']:.2f}亿元")
 
 def calculate_sum_by_industry(excel_path):
     root = tk.Tk()
@@ -106,7 +109,7 @@ def calculate_sum_by_industry(excel_path):
         selected_data = df[df['分行'] == value]
         print_branch_stats(selected_data, value)
     else:
-        print("无效的输入类型")
+        logging.info("无效的输入类型")
 
 excel_path = 'D:\\MyFiles\\文档\兴业材料\\总行\\经营数据\\2024\\0831.xlsx'
 if __name__ == "__main__":
