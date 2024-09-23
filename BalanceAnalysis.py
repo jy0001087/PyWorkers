@@ -28,9 +28,10 @@ def calculate_daily_change(current_path, base_path):
     # 计算日均变动
     merged_df['日均变动'] = merged_df['日均_current'] - merged_df['日均_base']
     merged_df['余额变动'] = merged_df['余额_current'] - merged_df['余额_base']
-    merged_df['分行'] = merged_df['核心客户号'].map(df1.set_index('核心客户号')['分行'])
-    merged_df['一级行业'] = merged_df['核心客户号'].map(df1.set_index('核心客户号')['一级行业'])
-    merged_df['客户名称'] = merged_df['核心客户号'].map(df1.set_index('核心客户号')['客户名称'])
+
+    #增加额外的列，都从df1获取最新当前信息
+    extra_info = df1.set_index('核心客户号')[['分行', '一级行业', '客户名称']]
+    merged_df = merged_df.join(extra_info, on='核心客户号')
 
     # 获取 current_path 中的核心客户号
     current_core_customer_ids = set(df1['核心客户号'])
@@ -40,9 +41,7 @@ def calculate_daily_change(current_path, base_path):
     # 找出 df1 中不在合并结果的行，新增客户
     df1_only = df1[~df1['核心客户号'].isin(merged_df['核心客户号'])]
     df1_only = df1_only[selected_columns]
-    df1_only['分行'] = df1_only['核心客户号'].map(df1.set_index('核心客户号')['分行'])
-    df1_only['一级行业'] = df1_only['核心客户号'].map(df1.set_index('核心客户号')['一级行业'])
-    df1_only['客户名称'] = df1_only['核心客户号'].map(df1.set_index('核心客户号')['客户名称'])
+    df1_only = df1_only.join(df1.set_index('核心客户号')[['分行', '一级行业', '客户名称']], on='核心客户号')
     df1_only['日均_current'] = df1_only['核心客户号'].map(df1.set_index('核心客户号')['日均'])
     df1_only['日均_base'] = 0
     df1_only['余额_current'] = df1_only['核心客户号'].map(df1.set_index('核心客户号')['余额'])
@@ -53,9 +52,7 @@ def calculate_daily_change(current_path, base_path):
     # 找出 df2 中不在合并结果中的行，销户客户
     df2_only = df2[~df2['核心客户号'].isin(merged_df['核心客户号'])]
     df2_only = df2_only[selected_columns]
-    df2_only['分行'] = df2_only['核心客户号'].map(df2.set_index('核心客户号')['分行'])
-    df2_only['一级行业'] = df2_only['核心客户号'].map(df2.set_index('核心客户号')['一级行业'])
-    df2_only['客户名称'] = df2_only['核心客户号'].map(df2.set_index('核心客户号')['客户名称'])
+    df2_only = df2_only.join(df2.set_index('核心客户号')[['分行', '一级行业', '客户名称']], on='核心客户号')
     df2_only['日均_current'] = 0
     df2_only['日均_base'] = df2_only['核心客户号'].map(df2.set_index('核心客户号')['日均'])
     df2_only['余额_current'] = 0
