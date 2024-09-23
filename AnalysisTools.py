@@ -106,10 +106,22 @@ def calculate_sum_by_industry(excel_path):
     root = tk.Tk()
     root.withdraw()  # 隐藏主窗口
 
-    choice = simpledialog.askstring("输入", "请选择输入类型（行业/分行）：")
-    value = simpledialog.askstring("输入", "请输入具体的值：")
-
-    df = pd.read_excel(excel_path, sheet_name='日均计算结果')
+    try:
+        choice = simpledialog.askstring("输入", "请选择输入类型（行业/分行）：")
+        value = simpledialog.askstring("输入", "请输入具体的值：")
+    except tk.TclError:
+        logging.error("用户取消了输入操作")
+        return
+    
+    try:
+        df = pd.read_excel(excel_path, sheet_name='日均计算结果')
+    except FileNotFoundError:
+        logging.error("文件未找到，请检查文件路径")
+        return
+    except pd.errors.ParserError:
+        logging.error("Excel 文件解析错误，请检查文件内容")
+        return
+    
     if choice == '行业':
         selected_data = df[df['一级行业'] == value]
         print_industry_stats(selected_data, value)
