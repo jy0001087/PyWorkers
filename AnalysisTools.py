@@ -25,15 +25,25 @@ def print_industry_stats(selected_data, value):
     selected_data.loc[:, '日均_current'] = selected_data['日均_current'].round(2)
     selected_data.loc[:, '日均变动'] = selected_data['日均变动'].round(2)
 
+    #计算日均及余额
     total_daily = selected_data['日均_current'].sum()
     total_change = selected_data['日均变动'].sum()
+
+    total_balance = selected_data['余额_current'].sum()
+    total_banalce_change = selected_data['余额变动'].sum()
 
     sorted_data = selected_data.sort_values(by='日均变动')
     top_5 = sorted_data.head(5)
     bottom_5 = sorted_data.tail(5).iloc[::-1]
 
+    # 按照客户存续状态统计不同状态的客户个数
+    customer_status_counts = selected_data['客户存续状态'].value_counts()
+
+    change_description_balance = get_change_description(total_banalce_change)
     change_description = get_change_description(total_change)  # 获取总变动的描述
-    logging.info(f" 全行{value}行业的当前日均总计为: {total_daily:.2f}亿元，{change_description}")
+    logging.info(f" 全行{value}行业的当前日均总计为: {total_daily:.2f}亿元，{change_description}{total_change:.2f}亿元;余额总计为：{total_balance:.2f}亿元，{change_description_balance}{total_banalce_change:.2f}")
+    logging.info(f"当前总客户数为：{customer_status_counts.get('存续', 0)+customer_status_counts.get('新增', 0)}，其中，存续客户为：{customer_status_counts.get('存续', 0)}，较年初销户：{customer_status_counts.get('销户', 0)}，较年初新增新增：{customer_status_counts.get('新增', 0)}亿元")
+
     logging.info("日均下降前5名分别为：")
     for index, row in top_5.iterrows():
         change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
