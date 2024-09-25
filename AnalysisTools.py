@@ -41,8 +41,8 @@ def print_industry_stats(selected_data, value):
 
     change_description_balance = get_change_description(total_banalce_change)
     change_description = get_change_description(total_change)  # 获取总变动的描述
-    logging.info(f" 全行{value}行业的当前日均总计为: {total_daily:.2f}亿元，{change_description}{total_change:.2f}亿元;余额总计为：{total_balance:.2f}亿元，{change_description_balance}{total_banalce_change:.2f}")
-    logging.info(f"当前总客户数为：{customer_status_counts.get('存续', 0)+customer_status_counts.get('新增', 0)}，其中，存续客户为：{customer_status_counts.get('存续', 0)}，较年初销户：{customer_status_counts.get('销户', 0)}，较年初新增新增：{customer_status_counts.get('新增', 0)}亿元")
+    logging.info(f" 全行{value}行业的当前日均总计为: {total_daily:.2f}亿元，{change_description}{total_change:.2f}亿元;余额总计为：{total_balance:.2f}亿元，{change_description_balance}{total_banalce_change:.2f}亿元")
+    logging.info(f"当前总客户数为：{customer_status_counts.get('存续', 0)+customer_status_counts.get('新增', 0)}，其中，存续客户为：{customer_status_counts.get('存续', 0)}，较年初销户：{customer_status_counts.get('销户', 0)}，较年初新增新增：{customer_status_counts.get('新增', 0)}户")
 
     logging.info("日均下降前5名分别为：")
     for index, row in top_5.iterrows():
