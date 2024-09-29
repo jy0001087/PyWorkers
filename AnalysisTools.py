@@ -71,11 +71,19 @@ def print_branch_stats(selected_data, value):
     total_branchdaily = selected_data_grouped['日均_current'].sum()
     total_branchDailyChange = selected_data_grouped['日均变动'].sum()
 
+    
+    # 按照客户存续状态统计不同状态的客户个数
+    customer_status_counts = selected_data['客户存续状态'].value_counts()
+
     change_description = get_change_description(total_branchDailyChange)  # 获取分行总变动的描述
     logging.info(f"输入的分行 '{value}' 的统计结果：")
     logging.info(f"{value}当前机构客户存款为{total_branchdaily:.2f}亿元，{change_description}:{total_branchDailyChange:.2f}亿元")
+    logging.info(f"当前机构客户数为：{customer_status_counts.get('存续', 0)+customer_status_counts.get('新增', 0)}，其中，存续客户为：{customer_status_counts.get('存续', 0)}，较年初销户：{customer_status_counts.get('销户', 0)}，较年初新增新增：{customer_status_counts.get('新增', 0)}户")
     for index, row in selected_data_grouped.iterrows():
         change_description_row = get_change_description(row['日均变动'])  # 获取每行变动的描述
+        customer_status_indus_group = selected_data[selected_data['一级行业'] == index]
+        customer_status_indus_group_counts = customer_status_indus_group['客户存续状态'].value_counts()
+        logging.info(f"{index}行业客户数为：{customer_status_indus_group_counts.get('存续', 0)+customer_status_indus_group_counts.get('新增', 0)}，其中，存续客户为：{customer_status_indus_group_counts.get('存续', 0)}，较年初销户：{customer_status_indus_group_counts.get('销户', 0)}，较年初新增新增：{customer_status_indus_group_counts.get('新增', 0)}户")
         if change_description_row!= "较年初无变化":
             logging.info(f"{index}行业，日均存款：{row['日均_current']:.2f}亿元，{change_description_row}: {row['日均变动']:.2f}亿元")
         else :
