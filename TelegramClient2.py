@@ -4,7 +4,26 @@ import os
 import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
+import importlib.util
+import subprocess
 
+## 运行是环境检查函数
+def check_package(package_name):
+    spec = importlib.util.find_spec(package_name)
+    if spec is None:
+        return False
+    else:
+        print(f"已提前安装{package_name}")
+        return True
+
+def install_package(package_name):
+    try:
+        subprocess.check_call(["pip", "install", package_name])
+        print(f"成功安装 {package_name}。")
+    except subprocess.CalledProcessError:
+        print(f"安装 {package_name} 时出现错误。")
+
+package_name = 'python-socks'
 # 请在这里填写你的API ID和API Hash
 api_id = '25270021'
 api_hash = 'e27d91ad37959d54eb5c1d454d567afa'
@@ -15,9 +34,9 @@ api_hash = 'e27d91ad37959d54eb5c1d454d567afa'
 # download_path = 'D:\\TelegramDownloads\\Rush无脑控吸资源群-1001981879084'
 
 # 你想要下载视频的Telegram群组或频道用户名
-# group_username =  'weiniduba1'
+group_username =  'weiniduba1'
 # 视频保存目录
-# download_path = 'D:\\TelegramDownloads\\为你独霸-weiniduba1'
+download_path = 'D:\\TelegramDownloads\\为你独霸-weiniduba1'
 
 #group_username =  -1002221790497
 #download_path = 'D:\\TelegramDownloads\\粗口控r资源-2221790497'
@@ -25,8 +44,11 @@ api_hash = 'e27d91ad37959d54eb5c1d454d567afa'
 #group_username =  'tuohuang1s'
 #download_path = 'D:\\TelegramDownloads\\拓荒哥乐园-tuohuang1s'
 
-group_username = -1001662972970
-download_path = 'D:\\TelegramDownloads\\搜同小说避难所-tuohuang1s'
+#group_username = -1001662972970
+#download_path = 'D:\\TelegramDownloads\\搜同小说避难所-tuohuang1s'
+
+#group_username =  'rushvideoshare'
+#download_path = 'D:\\TelegramDownloads\\优质-控r视频分享群'
 
 # 确保保存目录存在
 if not os.path.exists(download_path):
@@ -117,5 +139,8 @@ async def main():
     logging.info("所有文件下载完成。")
 
 # 启动事件循环并运行下载任务
-with client:
-    client.loop.run_until_complete(main())
+if __name__ == "__main__":
+    if not check_package(package_name):
+        install_package(package_name)
+    with client:
+        client.loop.run_until_complete(main())
