@@ -29,36 +29,21 @@ api_id = '25270021'
 api_hash = 'e27d91ad37959d54eb5c1d454d567afa'
 
 # 你想要下载视频的Telegram群组或频道用户名
-# group_username =  -1001981879084
-# 视频保存目录
-# download_path = 'D:\\TelegramDownloads\\Rush无脑控吸资源群-1001981879084'
-
-# 你想要下载视频的Telegram群组或频道用户名
-group_username =  'weiniduba1'
-# 视频保存目录
-download_path = 'D:\\TelegramDownloads\\为你独霸-weiniduba1'
-
-#group_username =  -1002221790497
-#download_path = 'D:\\TelegramDownloads\\粗口控r资源-2221790497'
-
-#group_username =  'tuohuang1s'
-#download_path = 'D:\\TelegramDownloads\\拓荒哥乐园-tuohuang1s'
-
-#group_username = -1001662972970
-#download_path = 'D:\\TelegramDownloads\\搜同小说避难所-tuohuang1s'
-
-#group_username =  'rushvideoshare'
-#download_path = 'D:\\TelegramDownloads\\优质-控r视频分享群'
-
-# 确保保存目录存在
-if not os.path.exists(download_path):
-    os.makedirs(download_path)
+# 定义包含多个组的信息
+groups_info = [
+    (-1001981879084, 'D:\\TelegramDownloads\\Rush无脑控吸资源群-1001981879084'),
+    ('weiniduba1', 'D:\\TelegramDownloads\\为你独霸-weiniduba1'),
+    (-1002221790497, 'D:\\TelegramDownloads\\粗口控r资源-2221790497'),
+    ('tuohuang1s', 'D:\\TelegramDownloads\\拓荒哥乐园-tuohuang1s'),
+    (-1001662972970, 'D:\\TelegramDownloads\\搜同小说避难所-tuohuang1s'),
+    ('rushvideoshare', 'D:\\TelegramDownloads\\优质-控r视频分享群')
+]
 
 # 设置日志配置
-log_file_path = os.path.join(download_path, 'log.log')
+log_file_path = os.path.join(os.getcwd(), 'log.log')
 # 创建RotatingFileHandler，最大文件大小为50MB，最多备份3个
 handler = RotatingFileHandler(
-    log_file_path, maxBytes=5*1024, backupCount=3
+    log_file_path, maxBytes=1*1024, backupCount=3
 )
 
 logging.basicConfig(
@@ -116,27 +101,35 @@ async def main():
     # 连接到Telegram服务器
     await client.start()
 
-    # 获取群组或频道的实体
-    group = await client.get_entity(group_username)
+    # 遍历每个组进行下载
+    for group_username, download_path in groups_info:
+        # 确保保存目录存在
+        if not os.path.exists(download_path):
+            os.makedirs(download_path)
 
-    # 获取所有文件、音频和视频消息
-    messages_files = await client.get_messages(group, None, filter=InputMessagesFilterDocument)
-    messages_videos = await client.get_messages(group, None, filter=InputMessagesFilterVideo)
-    messages_audios = await client.get_messages(group, None, filter=InputMessagesFilterMusic)
-    messages_audioMessage = await client.get_messages(group, None, filter=InputMessagesFilterVoice)
+        # 获取群组或频道的实体
+        group = await client.get_entity(group_username)
+        print(f"{group_username} 开始下载。")
+        # 获取所有文件、音频和视频消息
+        messages_files = await client.get_messages(group, None, filter=InputMessagesFilterDocument)
+        messages_videos = await client.get_messages(group, None, filter=InputMessagesFilterVideo)
+        messages_audios = await client.get_messages(group, None, filter=InputMessagesFilterMusic)
+        messages_audioMessage = await client.get_messages(group, None, filter=InputMessagesFilterVoice)
 
-    # 将所有消息合并到一个列表中
-    all_messages = messages_files + messages_videos + messages_audios + messages_audioMessage
+        # 将所有消息合并到一个列表中
+        all_messages = messages_files + messages_videos + messages_audios + messages_audioMessage
 
-# 创建Semaphore，限制同时进行的任务数为2
-    semaphore = asyncio.Semaphore(4)
-    # 创建任务列表
-    tasks = [download_file(semaphore, message, download_path,retry_count=300) for message in all_messages]
+        # 创建Semaphore，限制同时进行的任务数为2
+        semaphore = asyncio.Semaphore(4)
+        # 创建任务列表
+        tasks = [download_file(semaphore, message, download_path,retry_count=300) for message in all_messages]
 
-    # 并行执行所有下载任务
-    await asyncio.gather(*tasks)
+        # 并行执行所有下载任务
+        await asyncio.gather(*tasks)
 
-    logging.info("所有文件下载完成。")
+        logging.info(f"{group_username} 中所有文件下载完成。")
+        
+        print(f"{group_username} 中所有文件下载完成。")
 
 # 启动事件循环并运行下载任务
 if __name__ == "__main__":
