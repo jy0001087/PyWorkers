@@ -23,6 +23,7 @@ def install_package(package_name):
     except subprocess.CalledProcessError:
         print(f"安装 {package_name} 时出现错误。")
 
+#需要隐士安装的模块，否则会报错无法连接代理
 package_name = 'python-socks'
 # 请在这里填写你的API ID和API Hash
 api_id = '25270021'
@@ -128,7 +129,7 @@ async def main():
         await asyncio.gather(*tasks)
 
         logging.info(f"{group_username} 中所有文件下载完成。")
-        
+
         print(f"{group_username} 中所有文件下载完成。")
 
 # 启动事件循环并运行下载任务
