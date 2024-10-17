@@ -40,18 +40,6 @@ groups_info = [
     ('rushvideoshare', 'D:\\TelegramDownloads\\优质-控r视频分享群')
 ]
 
-# 设置日志配置
-log_file_path = os.path.join(os.getcwd(), 'log.log')
-# 创建RotatingFileHandler，最大文件大小为50MB，最多备份3个
-handler = RotatingFileHandler(
-    log_file_path, maxBytes=1*1024, backupCount=3
-)
-
-logging.basicConfig(
-    filename=log_file_path,
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
 
 # 创建一个Telethon客户端
 client = TelegramClient('session_name', api_id, api_hash,proxy=("socks5", '127.0.0.1', 10800))
@@ -108,6 +96,19 @@ async def main():
         if not os.path.exists(download_path):
             os.makedirs(download_path)
 
+        # 设置日志配置
+        log_file_path = os.path.join(download_path, 'log.log')
+        # 创建RotatingFileHandler，最大文件大小为50MB，最多备份3个
+        handler = RotatingFileHandler(
+            log_file_path, maxBytes=1*1024, backupCount=3
+        )
+
+        logging.basicConfig(
+            filename=log_file_path,
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
+        
         # 获取群组或频道的实体
         group = await client.get_entity(group_username)
         print(f"{group_username} 开始下载。")
