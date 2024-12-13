@@ -2,6 +2,13 @@ import pandas as pd
 import tkinter as tk
 from tkinter import simpledialog
 import logging
+from tkinter import filedialog
+
+def calculate_daily_change():
+    root = tk.Tk()
+    root.withdraw()  # 隐藏主窗口
+
+current_path = filedialog.askopenfilename(title="选择需要分析并且包含对比后结果的excel文件", filetypes=[("Excel 文件", "*.xlsx")])
 
 # 配置日志
 logging.basicConfig(filename='output.log', level=logging.INFO, format='%(message)s', filemode='w')
@@ -149,6 +156,5 @@ def calculate_sum_by_industry(excel_path):
     else:
         logging.info("无效的输入类型")
 
-excel_path = 'D:\\MyFiles\\文档\兴业材料\\总行\\经营数据\\2024\\0831.xlsx'
 if __name__ == "__main__":
-    calculate_sum_by_industry(excel_path)
+    calculate_sum_by_industry(current_path)

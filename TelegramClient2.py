@@ -32,12 +32,15 @@ api_hash = 'e27d91ad37959d54eb5c1d454d567afa'
 # 你想要下载视频的Telegram群组或频道用户名
 # 定义包含多个组的信息
 groups_info = [
+    ('ezl80231s', 'D:\\TelegramDownloads\\ELZ小叔群'),
     (-1001981879084, 'D:\\TelegramDownloads\\Rush无脑控吸资源群-1001981879084'),
     ('weiniduba1', 'D:\\TelegramDownloads\\为你独霸-weiniduba1'),
     (-1002221790497, 'D:\\TelegramDownloads\\粗口控r资源-2221790497'),
     ('tuohuang1s', 'D:\\TelegramDownloads\\拓荒哥乐园-tuohuang1s'),
     (-1001662972970, 'D:\\TelegramDownloads\\搜同小说避难所-tuohuang1s'),
-    ('rushvideoshare', 'D:\\TelegramDownloads\\优质-控r视频分享群')
+   # ('rushvideoshare', 'D:\\TelegramDownloads\\优质-控r视频分享群'),
+    (-1002379147214, 'D:\\TelegramDownloads\\控R资源分享群-1002379147214'),
+    (-1002471335106, 'D:\\TelegramDownloads\\彪哥FakeM的音频-1002471335106')
 ]
 
 
@@ -108,7 +111,7 @@ async def main():
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
-        
+
         # 获取群组或频道的实体
         group = await client.get_entity(group_username)
         print(f"{group_username} 开始下载。")

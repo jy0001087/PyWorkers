@@ -1,5 +1,15 @@
 import pandas as pd
 import openpyxl
+import tkinter as tk
+from tkinter import filedialog
+
+def calculate_daily_change():
+    root = tk.Tk()
+    root.withdraw()  # 隐藏主窗口
+
+current_path = filedialog.askopenfilename(title="选择当前文件", filetypes=[("Excel 文件", "*.xlsx")])
+base_path = filedialog.askopenfilename(title="选择基础文件", filetypes=[("Excel 文件", "*.xlsx")])
+
 
 def calculate_daily_change(current_path, base_path):
     # 读取 current_path 对应的工作簿
@@ -9,7 +19,7 @@ def calculate_daily_change(current_path, base_path):
         workbook.save(current_path)
 
     # 读取 excel1 的数据,筛选企金小口径为1的数据
-    df1 = pd.read_excel(current_path, sheet_name='2-总行级明细')
+    df1 = pd.read_excel(current_path, sheet_name='2-总行明细')
     df1 = df1[df1['企金小口径'] == 1]
     # 读取 excel2 的数据
     df2 = pd.read_excel(base_path, sheet_name='2312')
@@ -73,6 +83,4 @@ def calculate_daily_change(current_path, base_path):
     with pd.ExcelWriter(current_path, engine='openpyxl', mode='a') as writer:
         final_df.to_excel(writer, sheet_name='日均计算结果', index=False)
 
-current_path = 'D:\\MyFiles\\文档\\兴业材料\\总行\\经营数据\\2024\\0831.xlsx'
-base_path = 'D:\\MyFiles\\文档\\兴业材料\\总行\\经营数据\\2024\\23总结.xlsx'
 calculate_daily_change(current_path, base_path)
