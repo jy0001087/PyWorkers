@@ -40,7 +40,9 @@ groups_info = [
     (-1001662972970, 'D:\\TelegramDownloads\\搜同小说避难所-tuohuang1s'),
    # ('rushvideoshare', 'D:\\TelegramDownloads\\优质-控r视频分享群'),
     (-1002379147214, 'D:\\TelegramDownloads\\控R资源分享群-1002379147214'),
-    (-1002471335106, 'D:\\TelegramDownloads\\彪哥FakeM的音频-1002471335106')
+    (-1002471335106, 'D:\\TelegramDownloads\\彪哥FakeM的音频-1002471335106'),
+    (-1002246826599,'D:\\TelegramDownloads\\无脑傻逼贡狗母蛆-1002246826599'),
+    ('kinkyboi8686','D:\\TelegramDownloads\\ChasteBoy-kinkyboi8686')
 ]
 
 
