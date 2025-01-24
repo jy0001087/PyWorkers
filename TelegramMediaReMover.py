@@ -1,3 +1,6 @@
+
+## step2. 再运行这个文件，把back目录的文件进行文件夹归类
+
 import os  # 导入操作系统相关的模块，用于文件和目录操作
 import shutil  # 导入用于文件复制、移动等操作的模块
 import tkinter as tk  # 导入 tkinter 库，并将其简称为 tk

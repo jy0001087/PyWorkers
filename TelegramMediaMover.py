@@ -1,3 +1,5 @@
+
+##先运行这个脚本，把文件拷贝到badk目录
 import os
 import tkinter as tk
 from tkinter import filedialog
