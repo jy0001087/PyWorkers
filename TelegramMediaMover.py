@@ -8,7 +8,7 @@ import shutil
 def select_folder():
     root = tk.Tk()
     root.withdraw()  # 隐藏主窗口
-    folder_path = filedialog.askdirectory()
+    folder_path = filedialog.askdirectory(title="选择已下载好文件所在的文件夹 不带back")
     return folder_path
 
 def process_folder(folder_path):
