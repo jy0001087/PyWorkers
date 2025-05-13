@@ -19,14 +19,14 @@ def calculate_daily_change(current_path, base_path):
         workbook.save(current_path)
 
     # 读取 excel1 的数据,筛选企金小口径为1的数据
-    df1 = pd.read_excel(current_path, sheet_name='2-总行明细')
-    df1 = df1[df1['企金小口径'] == 1]
+    df1 = pd.read_excel(current_path, sheet_name='重庆')
+    df1 = df1[df1['企金客户小口径标志'] == 1]
     # 读取 excel2 的数据
-    df2 = pd.read_excel(base_path, sheet_name='2312')
+    df2 = pd.read_excel(base_path, sheet_name='重庆')
 
     # 提取共同的列用于匹配和计算
-    common_columns = ['核心客户号']
-    selected_columns = common_columns + ['日均'] + ['余额']
+    common_columns = ['核心客户号'] 
+    selected_columns = common_columns + ['日均'] + ['余额'] +  ['贷款']
 
     # 仅保留共同列和日均存款列的数据
     df1_selected = df1[selected_columns]
@@ -38,6 +38,8 @@ def calculate_daily_change(current_path, base_path):
     # 计算日均变动
     merged_df['日均变动'] = merged_df['日均_current'] - merged_df['日均_base']
     merged_df['余额变动'] = merged_df['余额_current'] - merged_df['余额_base']
+    merged_df['贷款变动'] = merged_df['贷款_current'] - merged_df['贷款_base']
+
 
     #增加额外的列，都从df1获取最新当前信息
     extra_info = df1.set_index('核心客户号')[['分行', '一级行业', '客户名称']]
@@ -56,8 +58,11 @@ def calculate_daily_change(current_path, base_path):
     df1_only['日均_base'] = 0
     df1_only['余额_current'] = df1_only['核心客户号'].map(df1.set_index('核心客户号')['余额'])
     df1_only['余额_base'] = 0
+    df1_only['贷款_current'] = df1_only['核心客户号'].map(df1.set_index('核心客户号')['贷款'])
+    df1_only['贷款_base'] = 0
     df1_only['日均变动'] = df1_only['日均_current'] - df1_only['日均_base']
     df1_only['余额变动'] = df1_only['余额_current'] - df1_only['余额_base']
+    df1_only['贷款变动'] = df1_only['贷款_current'] - df1_only['贷款_base']
 
     # 找出 df2 中不在合并结果中的行，销户客户
     df2_only = df2[~df2['核心客户号'].isin(merged_df['核心客户号'])]
@@ -67,8 +72,11 @@ def calculate_daily_change(current_path, base_path):
     df2_only['日均_base'] = df2_only['核心客户号'].map(df2.set_index('核心客户号')['日均'])
     df2_only['余额_current'] = 0
     df2_only['余额_base'] = df2_only['核心客户号'].map(df2.set_index('核心客户号')['余额'])
+    df2_only['贷款_current'] = 0
+    df2_only['贷款_base'] = df2_only['核心客户号'].map(df2.set_index('核心客户号')['贷款'])
     df2_only['日均变动'] = df2_only['日均_current'] - df2_only['日均_base']
     df2_only['余额变动'] = df2_only['余额_current'] - df2_only['余额_base']
+    df2_only['贷款变动'] = df2_only['贷款_current'] - df2_only['贷款_base']
     # 将这些额外的行添加到合并结果中
     final_df = pd.concat([merged_df, df1_only, df2_only], ignore_index=True)
 
