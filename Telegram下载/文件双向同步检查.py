@@ -69,8 +69,9 @@ def process_folders(a_path, b_path):
                 logging.info(f"已在download文件夹中创建大小为0的文件: {a_file_path}")
             else:
                 # 删除download文件夹中的大小为0的文件
-                os.remove(a_file_path)
-                logging.info(f"已删除download文件夹中的大小为0的文件: {a_file_path}")
+                # os.remove(a_file_path)  20250721改为不删除，可能是删除的重复文件，计入日志
+                # logging.info(f"已删除download文件夹中的大小为0的文件: {a_file_path}")
+                logging.info(f"可能重复的文件: {a_file_path}")
             continue
             
         # 情况2: download文件夹中不存在，Back文件夹中存在
