@@ -1,161 +1,237 @@
 #!/usr/bin/env python3
 """
 file_register_macos.py
-macOS 专用：统计目标目录下的
-  - 普通文件夹
-  - 普通文件
-  - 包（.app / .framework / .photoslibrary 等）
-  - 以 ._ 开头的隐藏资源叉文件
-四类信息，最后写入 fileRegister.json
-Usage: python3 file_register_macos.py <target_dir>
+macOS 专用目录资产统计/去重工具
+Usage:
+    # 新建/覆盖
+    python3 file_register_macos.py ~/Pictures
+
+    # 追加并删除重复
+    python3 file_register_macos.py -a -f ~/Pictures
 """
+from __future__ import annotations
 
-import os
-import sys
+import argparse
 import json
+import logging
+import os
+import shutil
+import sys
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import List, Tuple, Dict, Any, Optional
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = lambda x, **k: x  # noqa: E731
+
+# ---------- 配置 ----------
 PACKAGE_EXTENSIONS = {
-    '.app', '.framework', '.bundle', '.plugin',
-    '.kext', '.qlgenerator', '.photoslibrary',
-    '.docset', '.playground', '.xcassets'
+    ".app",
+    ".framework",
+    ".bundle",
+    ".plugin",
+    ".kext",
+    ".qlgenerator",
+    ".photoslibrary",
+    ".docset",
+    ".playground",
+    ".xcassets",
 }
+DEFAULT_JSON = "fileRegister.json"
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
+# ---------- 工具 ----------
 def human_size(b: int) -> str:
     if b == 0:
         return "0 B"
-    kb = b / 1024
-    if kb < 1024:
-        return f"{kb:.2f} KB"
-    mb = kb / 1024
-    if mb < 1024:
-        return f"{mb:.2f} MB"
-    return f"{mb / 1024:.2f} GB"
+    for unit in ("KB", "MB", "GB"):
+        b /= 1024.0
+        if b < 1024:
+            return f"{b:.2f} {unit}"
+    return f"{b/1024:.2f} TB"
 
 def is_package(p: Path) -> bool:
     return p.is_dir() and p.suffix.lower() in PACKAGE_EXTENSIONS
 
-def folder_size_and_count(folder: Path) -> Tuple[int, int]:
-    """返回 (总字节, 内部文件数)"""
-    bytes_total = 0
-    files_total = 0
-    for p in folder.rglob('*'):
-        try:
-            if p.is_file():
-                bytes_total += p.lstat().st_size
-                files_total += 1
-            elif is_package(p):
-                bytes_total += p.lstat().st_size
-                files_total += 1
-        except OSError:
-            pass
-    return bytes_total, files_total
+def safe_stat(p: Path) -> Optional[os.stat_result]:
+    try:
+        return p.lstat()
+    except OSError as e:
+        logging.warning("无法访问 %s : %s", p, e)
+        return None
 
-def collect_file_info(target_dir: str) -> List[Dict[str, Any]]:
-    target_path = Path(target_dir).expanduser().resolve()
-    if not target_path.is_dir():
-        raise ValueError(f"路径不存在或不是目录: {target_path}")
+# ---------- 核心采集 ----------
+def collect(target: Path) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    folders_cnt = folders_bytes = 0
+    files_cnt = files_bytes = 0
+    packages_cnt = packages_bytes = 0
+    du_cnt = du_bytes = 0
 
     records: List[Dict[str, Any]] = []
-    index = 1
 
-    # 类别计数器
-    folders_bytes = folders_cnt = 0
-    files_bytes   = files_cnt   = 0
-    packages_bytes = packages_cnt = 0
-    du_bytes = du_cnt = 0  # ._ 文件
+    # 进度条仅在有 tqdm 时生效
+    for path in tqdm(list(target.rglob("*")), desc="扫描"):
+        st = safe_stat(path)
+        if not st:
+            continue
+        size = st.st_size
 
-    for root, dirs, filenames in os.walk(target_path, topdown=True):
-        root_path = Path(root)
+        rp = str(path.relative_to(target))
 
-        # 1. 普通文件夹（不含根目录）
-        if root_path != target_path:
-            size, count = folder_size_and_count(root_path)
-            folders_bytes += size
-            folders_cnt += 1
-            records.append({
-                "index": index,
-                "filename": root_path.name,
-                "size": human_size(size),
-                "extension": "<folder>",
-                "relative_path": str(root_path.relative_to(target_path)),
-                "file_count": count,
-                "type": "folder"
-            })
-            index += 1
+        if path.name.startswith("._"):
+            du_bytes += size
+            du_cnt += 1
+            continue
 
-        # 2. 包（视为单个文件）
-        for d in dirs[:]:
-            dir_path = root_path / d
-            if is_package(dir_path):
-                size, _ = folder_size_and_count(dir_path)
-                packages_bytes += size
-                packages_cnt += 1
-                records.append({
-                    "index": index,
-                    "filename": dir_path.name,
+        if path.name == ".DS_Store":
+            continue
+
+        if is_package(path):
+            packages_cnt += 1
+            packages_bytes += size
+            records.append(
+                {
+                    "filename": path.name,
                     "size": human_size(size),
-                    "extension": dir_path.suffix,
-                    "relative_path": str(dir_path.relative_to(target_path)),
-                    "type": "package"
-                })
-                index += 1
-                dirs.remove(d)
+                    "extension": path.suffix,
+                    "relative_path": rp,
+                    "type": "package",
+                }
+            )
+            continue
 
-        # 3. 普通文件 & ._
-        for filename in filenames:
-            if filename == '.DS_Store':
-                continue
-            file_path = root_path / filename
-            try:
-                size = file_path.lstat().st_size
-            except OSError:
-                continue
+        if path.is_dir():
+            # 统计文件夹内部文件/大小
+            dir_size = dir_files = 0
+            for sub in path.rglob("*"):
+                sst = safe_stat(sub)
+                if sst and sst.st_size:
+                    dir_size += sst.st_size
+                    dir_files += 1
+            folders_cnt += 1
+            folders_bytes += dir_size
+            records.append(
+                {
+                    "filename": path.name,
+                    "size": human_size(dir_size),
+                    "extension": "<folder>",
+                    "relative_path": rp,
+                    "file_count": dir_files,
+                    "type": "folder",
+                }
+            )
+            continue
 
-            if filename.startswith('._'):
-                du_bytes += size
-                du_cnt += 1
-                continue  # 仅统计，不写入明细
-
-            files_bytes += size
+        if path.is_file():
             files_cnt += 1
-            records.append({
-                "index": index,
-                "filename": file_path.name,
-                "size": human_size(size),
-                "extension": file_path.suffix,
-                "relative_path": str(file_path.relative_to(target_path)),
-                "type": "file"
-            })
-            index += 1
+            files_bytes += size
+            records.append(
+                {
+                    "filename": path.name,
+                    "size": human_size(size),
+                    "extension": path.suffix,
+                    "relative_path": rp,
+                    "type": "file",
+                }
+            )
 
-    # 4. 最终汇总
-    summary = {
-        "folders":   {"count": folders_cnt,   "size": human_size(folders_bytes)},
-        "files":     {"count": files_cnt,     "size": human_size(files_bytes)},
-        "packages":  {"count": packages_cnt,  "size": human_size(packages_bytes)},
+    summary: Dict[str, Any] = {
+        "folders": {"count": folders_cnt, "size": human_size(folders_bytes)},
+        "files": {"count": files_cnt, "size": human_size(files_bytes)},
+        "packages": {"count": packages_cnt, "size": human_size(packages_bytes)},
         "dot_underscore_files": {"count": du_cnt, "size": human_size(du_bytes)},
         "total_files": folders_cnt + files_cnt + packages_cnt + du_cnt,
-        "total_size": human_size(folders_bytes + files_bytes + packages_bytes + du_bytes)
+        "total_size": human_size(
+            folders_bytes + files_bytes + packages_bytes + du_bytes
+        ),
     }
-    return records + [summary]
+    return records, summary
 
-def main():
-    if len(sys.argv) != 2:
-        print("用法: python3 file_register_macos.py <target_dir>")
-        sys.exit(1)
-
-    target_dir = sys.argv[1]
+# ---------- 主流程 ----------
+def safe_delete(p: Path) -> None:
     try:
-        data = collect_file_info(target_dir)
-        output_file = Path(target_dir).resolve() / "fileRegister.json"
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"已生成 {output_file}")
+        if p.is_dir():
+            shutil.rmtree(p)
+        else:
+            p.unlink(missing_ok=True)
     except Exception as e:
-        print(f"错误: {e}", file=sys.stderr)
+        logging.error("删除失败 %s : %s", p, e)
+
+def main(target: Path, add: bool, force: bool, out: Optional[Path]) -> None:
+    out_path = out or (target / DEFAULT_JSON)
+
+    # 读取旧数据
+    old_records: List[Dict[str, Any]] = []
+    if add and out_path.exists():
+        try:
+            old_records = json.loads(out_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logging.error("读取旧 json 失败: %s", e)
+            sys.exit(2)
+        # 剔除旧 summary
+        old_records = [r for r in old_records if "total_files" not in r]
+
+    # 采集新数据
+    new_records, summary = collect(target)
+
+    # 建立已存在 relative_path 的集合
+    existing = {r["relative_path"] for r in old_records}
+
+    # 删除已存在文件/文件夹
+    to_delete = [target / r["relative_path"] for r in new_records if r["relative_path"] in existing]
+    if to_delete:
+        if not force:
+            ans = input(
+                f"检测到 {len(to_delete)} 个已存在条目将被删除，确认? [y/N] "
+            )
+            if ans.lower() != "y":
+                logging.info("用户取消")
+                sys.exit(0)
+        for p in to_delete:
+            safe_delete(p)
+
+    # 过滤被删除的条目
+    new_records = [
+        r for r in new_records if (target / r["relative_path"]).exists()
+    ]
+
+    # 合并并重新编号
+    combined = old_records + new_records
+    for idx, record in enumerate(combined, 1):
+        record["index"] = idx
+    combined.append(summary)
+
+    # 写回
+    try:
+        out_path.write_text(
+            json.dumps(combined, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        logging.info("已写入 %s", out_path)
+    except Exception as e:
+        logging.error("写入失败: %s", e)
         sys.exit(2)
 
+def cli() -> None:
+    parser = argparse.ArgumentParser(description="macOS 目录资产统计/去重工具")
+    parser.add_argument("target", help="目标目录")
+    parser.add_argument(
+        "-a", "--add", action="store_true", help="追加模式（去重+删除）"
+    )
+    parser.add_argument(
+        "-f", "--force", action="store_true", help="删除前不确认"
+    )
+    parser.add_argument(
+        "-o", "--output", type=Path, help="自定义 json 输出路径"
+    )
+    args = parser.parse_args()
+
+    target = Path(args.target).expanduser().resolve()
+    if not target.is_dir():
+        logging.error("目录不存在: %s", args.target)
+        sys.exit(1)
+
+    main(target, args.add, args.force, args.output)
+
 if __name__ == "__main__":
-    main()
+    cli()
