@@ -175,11 +175,15 @@ def main(target: Path, add: bool, force: bool, out: Optional[Path]) -> None:
     # 采集新数据
     new_records, summary = collect(target)
 
-    # 建立已存在 relative_path 的集合
-    existing = {r["relative_path"] for r in old_records}
+    # 旧记录中已有 basename 的集合
+    existing_basename = {r["filename"] for r in old_records}
 
-    # 删除已存在文件/文件夹
-    to_delete = [target / r["relative_path"] for r in new_records if r["relative_path"] in existing]
+    # 删除旧记录中已存在的同名文件/目录/包
+    to_delete = [
+        target / r["relative_path"]
+        for r in new_records
+        if r["filename"] in existing_basename
+    ]
     if to_delete:
         if not force:
             ans = input(
@@ -191,9 +195,11 @@ def main(target: Path, add: bool, force: bool, out: Optional[Path]) -> None:
         for p in to_delete:
             safe_delete(p)
 
-    # 过滤被删除的条目
+    # 过滤被删除的条目（同名且已存在直接丢弃）
     new_records = [
-        r for r in new_records if (target / r["relative_path"]).exists()
+        r for r in new_records
+        if (target / r["relative_path"]).exists()
+           and r["filename"] not in existing_basename
     ]
 
     # 合并并重新编号
