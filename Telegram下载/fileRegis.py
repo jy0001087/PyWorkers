@@ -1,243 +1,172 @@
 #!/usr/bin/env python3
-"""
-file_register_macos.py
-macOS 专用目录资产统计/去重工具
-Usage:
-    # 新建/覆盖
-    python3 file_register_macos.py ~/Pictures
-
-    # 追加并删除重复
-    python3 file_register_macos.py -a -f ~/Pictures
-"""
-from __future__ import annotations
-
-import argparse
-import json
-import logging
+# -*- coding: utf-8 -*-
 import os
-import shutil
-import sys
-from pathlib import Path
-from typing import List, Tuple, Dict, Any, Optional
+import json
+import argparse
+from webdav3.client import Client
+from tqdm import tqdm
 
-try:
-    from tqdm import tqdm
-except ImportError:
-    tqdm = lambda x, **k: x  # noqa: E731
+def parse_args():
+    parser = argparse.ArgumentParser(description="本地与 WebDAV 文件比对并清理重复文件")
+    parser.add_argument('--local', required=True, help='本地目录路径')
+    parser.add_argument('--remote', required=True, help='WebDAV 地址，如 http://ubuntu:5244/dav')
+    parser.add_argument('--username', required=True, help='WebDAV 用户名')
+    parser.add_argument('--password', required=True, help='WebDAV 密码')
+    parser.add_argument('--output', default='output', help='JSON 输出目录')
+    parser.add_argument('--dry-run', action='store_true', help='模拟运行，不删除任何远程文件')
+    return parser.parse_args()
 
-# ---------- 配置 ----------
-PACKAGE_EXTENSIONS = {
-    ".app",
-    ".framework",
-    ".bundle",
-    ".plugin",
-    ".kext",
-    ".qlgenerator",
-    ".photoslibrary",
-    ".docset",
-    ".playground",
-    ".xcassets",
-}
-DEFAULT_JSON = "fileRegister.json"
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+def format_size(size_bytes):
+    if size_bytes >= 1024 ** 2:
+        return f"{size_bytes / 1024 ** 2:.2f} MB"
+    elif size_bytes >= 1024:
+        return f"{size_bytes / 1024:.2f} KB"
+    else:
+        return f"{size_bytes} B"
 
-# ---------- 工具 ----------
-def human_size(b: int) -> str:
-    if b == 0:
-        return "0 B"
-    for unit in ("KB", "MB", "GB"):
-        b /= 1024.0
-        if b < 1024:
-            return f"{b:.2f} {unit}"
-    return f"{b/1024:.2f} TB"
+def list_local_files(base_path):
+    records = []
+    index = 1
+    for root, dirs, files in os.walk(base_path):
+        dirs[:] = [d for d in dirs if not d.startswith('.') and not d.startswith('._')]
+        for d in dirs:
+            dir_path = os.path.join(root, d)
+            rel_path = os.path.relpath(dir_path, base_path)
+            file_count = sum([len(filenames) for _, _, filenames in os.walk(dir_path)])
+            records.append({
+                "index": index,
+                "filename": d,
+                "size": format_size(0),
+                "extension": "<folder>",
+                "relative_path": rel_path,
+                "file_count": file_count,
+                "type": "folder"
+            })
+            index += 1
+        for f in files:
+            if f.startswith('.') or f.startswith('._'):
+                continue
+            file_path = os.path.join(root, f)
+            rel_path = os.path.relpath(file_path, base_path)
+            size = os.path.getsize(file_path)
+            records.append({
+                "index": index,
+                "filename": f,
+                "size": format_size(size),
+                "extension": os.path.splitext(f)[1],
+                "relative_path": rel_path,
+                "type": "file"
+            })
+            index += 1
+    return records
 
-def is_package(p: Path) -> bool:
-    return p.is_dir() and p.suffix.lower() in PACKAGE_EXTENSIONS
+def list_remote_files(client, base='/'):
+    records = []
+    queue = [base]
+    index = 1
+    while queue:
+        current = queue.pop()
+        contents = client.list(current)
+        for item in contents:
+            if item in (current, current.rstrip('/') + '/'):
+                continue
+            if item.startswith('.') or item.startswith('._'):
+                continue
+            full_path = os.path.join(current, item).replace("\\", "/")
+            if client.check(full_path):
+                try:
+                    info = client.info(full_path)
+                    size = int(info.get('size', 0))
+                except Exception:
+                    size = 0
+                records.append({
+                    "index": index,
+                    "filename": os.path.basename(full_path),
+                    "size": format_size(size),
+                    "extension": os.path.splitext(full_path)[1],
+                    "relative_path": full_path.lstrip('/'),
+                    "type": "file"
+                })
+                index += 1
+            else:
+                queue.append(full_path)
+    return records
 
-def safe_stat(p: Path) -> Optional[os.stat_result]:
-    try:
-        return p.lstat()
-    except OSError as e:
-        logging.warning("无法访问 %s : %s", p, e)
-        return None
+def remove_remote_duplicates(client, local_files, remote_files, dry_run=False):
+    local_set = set((f["filename"], f["size"]) for f in local_files if f["type"] == "file")
+    removed = []
 
-# ---------- 核心采集 ----------
-def collect(target: Path) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    folders_cnt = folders_bytes = 0
-    files_cnt = files_bytes = 0
-    packages_cnt = packages_bytes = 0
-    du_cnt = du_bytes = 0
-
-    records: List[Dict[str, Any]] = []
-
-    # 进度条仅在有 tqdm 时生效
-    for path in tqdm(list(target.rglob("*")), desc="扫描"):
-        st = safe_stat(path)
-        if not st:
+    for rf in tqdm(remote_files, desc="🗑️ 删除远程重复文件" if not dry_run else "🔎 模拟删除重复文件"):
+        if rf["type"] != "file":
             continue
-        size = st.st_size
+        if (rf["filename"], rf["size"]) in local_set:
+            remote_path = "/" + rf["relative_path"]
+            if dry_run:
+                removed.append(remote_path)
+            else:
+                try:
+                    client.clean(remote_path)
+                    removed.append(remote_path)
+                except Exception as e:
+                    print(f"[跳过] 删除失败 {remote_path}: {e}")
+    return removed
 
-        rp = str(path.relative_to(target))
-
-        if path.name.startswith("._"):
-            du_bytes += size
-            du_cnt += 1
+def remove_empty_dirs(client, path='/', dry_run=False):
+    subitems = client.list(path)
+    for item in subitems:
+        full = os.path.join(path, item).replace("\\", "/")
+        if full in (path, path.rstrip('/') + '/'):
             continue
-
-        if path.name == ".DS_Store":
+        if item.startswith('.') or item.startswith('._'):
             continue
+        if not client.check(full):
+            remove_empty_dirs(client, full, dry_run=dry_run)
+            try:
+                if len(client.list(full)) == 1:
+                    if dry_run:
+                        print(f"🔎 模拟删除空目录：{full}")
+                    else:
+                        client.clean(full)
+            except Exception as e:
+                print(f"[跳过] 清空文件夹失败 {full}: {e}")
 
-        if is_package(path):
-            packages_cnt += 1
-            packages_bytes += size
-            records.append(
-                {
-                    "filename": path.name,
-                    "size": human_size(size),
-                    "extension": path.suffix,
-                    "relative_path": rp,
-                    "type": "package",
-                }
-            )
-            continue
+def write_json(data, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
-        if path.is_dir():
-            # 统计文件夹内部文件/大小
-            dir_size = dir_files = 0
-            for sub in path.rglob("*"):
-                sst = safe_stat(sub)
-                if sst and sst.st_size:
-                    dir_size += sst.st_size
-                    dir_files += 1
-            folders_cnt += 1
-            folders_bytes += dir_size
-            records.append(
-                {
-                    "filename": path.name,
-                    "size": human_size(dir_size),
-                    "extension": "<folder>",
-                    "relative_path": rp,
-                    "file_count": dir_files,
-                    "type": "folder",
-                }
-            )
-            continue
+def main():
+    args = parse_args()
 
-        if path.is_file():
-            files_cnt += 1
-            files_bytes += size
-            records.append(
-                {
-                    "filename": path.name,
-                    "size": human_size(size),
-                    "extension": path.suffix,
-                    "relative_path": rp,
-                    "type": "file",
-                }
-            )
+    print("📂 正在遍历本地目录...")
+    local_files = list_local_files(args.local)
 
-    summary: Dict[str, Any] = {
-        "folders": {"count": folders_cnt, "size": human_size(folders_bytes)},
-        "files": {"count": files_cnt, "size": human_size(files_bytes)},
-        "packages": {"count": packages_cnt, "size": human_size(packages_bytes)},
-        "dot_underscore_files": {"count": du_cnt, "size": human_size(du_bytes)},
-        "total_files": folders_cnt + files_cnt + packages_cnt + du_cnt,
-        "total_size": human_size(
-            folders_bytes + files_bytes + packages_bytes + du_bytes
-        ),
+    print("🌐 正在连接 WebDAV...")
+    options = {
+        'webdav_hostname': args.remote,
+        'webdav_login': args.username,
+        'webdav_password': args.password,
     }
-    return records, summary
+    client = Client(options)
 
-# ---------- 主流程 ----------
-def safe_delete(p: Path) -> None:
-    try:
-        if p.is_dir():
-            shutil.rmtree(p)
-        else:
-            p.unlink(missing_ok=True)
-    except Exception as e:
-        logging.error("删除失败 %s : %s", p, e)
+    print("📁 正在遍历远程目录...")
+    remote_files = list_remote_files(client)
 
-def main(target: Path, add: bool, force: bool, out: Optional[Path]) -> None:
-    out_path = out or (target / DEFAULT_JSON)
+    print("🗑️ 正在处理重复文件...")
+    removed = remove_remote_duplicates(client, local_files, remote_files, dry_run=args.dry_run)
 
-    # 读取旧数据
-    old_records: List[Dict[str, Any]] = []
-    if add and out_path.exists():
-        try:
-            old_records = json.loads(out_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            logging.error("读取旧 json 失败: %s", e)
-            sys.exit(2)
-        # 剔除旧 summary
-        old_records = [r for r in old_records if "total_files" not in r]
+    print("🧹 正在清理空文件夹...")
+    remove_empty_dirs(client, dry_run=args.dry_run)
 
-    # 采集新数据
-    new_records, summary = collect(target)
+    print("💾 正在保存 JSON 文件...")
+    os.makedirs(args.output, exist_ok=True)
+    write_json(local_files, os.path.join(args.output, "local_files.json"))
+    write_json(remote_files, os.path.join(args.output, "remote_files.json"))
+    write_json(removed, os.path.join(args.output, "removed_files.json"))
 
-    # 旧记录中已有 basename 的集合
-    existing_basename = {r["filename"] for r in old_records}
-
-    # 删除旧记录中已存在的同名文件/目录/包
-    to_delete = [
-        target / r["relative_path"]
-        for r in new_records
-        if r["filename"] in existing_basename
-    ]
-    if to_delete:
-        if not force:
-            ans = input(
-                f"检测到 {len(to_delete)} 个已存在条目将被删除，确认? [y/N] "
-            )
-            if ans.lower() != "y":
-                logging.info("用户取消")
-                sys.exit(0)
-        for p in to_delete:
-            safe_delete(p)
-
-    # 过滤被删除的条目（同名且已存在直接丢弃）
-    new_records = [
-        r for r in new_records
-        if (target / r["relative_path"]).exists()
-           and r["filename"] not in existing_basename
-    ]
-
-    # 合并并重新编号
-    combined = old_records + new_records
-    for idx, record in enumerate(combined, 1):
-        record["index"] = idx
-    combined.append(summary)
-
-    # 写回
-    try:
-        out_path.write_text(
-            json.dumps(combined, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        logging.info("已写入 %s", out_path)
-    except Exception as e:
-        logging.error("写入失败: %s", e)
-        sys.exit(2)
-
-def cli() -> None:
-    parser = argparse.ArgumentParser(description="macOS 目录资产统计/去重工具")
-    parser.add_argument("target", help="目标目录")
-    parser.add_argument(
-        "-a", "--add", action="store_true", help="追加模式（去重+删除）"
-    )
-    parser.add_argument(
-        "-f", "--force", action="store_true", help="删除前不确认"
-    )
-    parser.add_argument(
-        "-o", "--output", type=Path, help="自定义 json 输出路径"
-    )
-    args = parser.parse_args()
-
-    target = Path(args.target).expanduser().resolve()
-    if not target.is_dir():
-        logging.error("目录不存在: %s", args.target)
-        sys.exit(1)
-
-    main(target, args.add, args.force, args.output)
+    print("\n✅ 全部完成！结果输出至:", os.path.abspath(args.output))
+    if args.dry_run:
+        print("💡 本次为模拟运行，未执行任何删除操作。")
 
 if __name__ == "__main__":
-    cli()
+    main()
