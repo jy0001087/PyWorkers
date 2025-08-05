@@ -1,172 +1,139 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 import os
-import json
 import argparse
+import json
+import logging
 from webdav3.client import Client
-from tqdm import tqdm
+from urllib.parse import urlparse
+import hashlib
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="本地与 WebDAV 文件比对并清理重复文件")
-    parser.add_argument('--local', required=True, help='本地目录路径')
-    parser.add_argument('--remote', required=True, help='WebDAV 地址，如 http://ubuntu:5244/dav')
-    parser.add_argument('--username', required=True, help='WebDAV 用户名')
-    parser.add_argument('--password', required=True, help='WebDAV 密码')
-    parser.add_argument('--output', default='output', help='JSON 输出目录')
-    parser.add_argument('--dry-run', action='store_true', help='模拟运行，不删除任何远程文件')
-    return parser.parse_args()
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("fileRegis.log", encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
 
-def format_size(size_bytes):
-    if size_bytes >= 1024 ** 2:
-        return f"{size_bytes / 1024 ** 2:.2f} MB"
-    elif size_bytes >= 1024:
-        return f"{size_bytes / 1024:.2f} KB"
-    else:
-        return f"{size_bytes} B"
+def get_file_info(base_path, root, file, is_folder):
+    rel_path = os.path.relpath(os.path.join(root, file), base_path)
+    full_path = os.path.join(root, file)
+    size = os.path.getsize(full_path) if not is_folder else sum(
+        os.path.getsize(os.path.join(dp, f))
+        for dp, dn, filenames in os.walk(full_path)
+        for f in filenames
+    )
+    return {
+        "filename": file,
+        "size": f"{size / 1024:.2f} KB",
+        "extension": "<folder>" if is_folder else os.path.splitext(file)[1],
+        "relative_path": rel_path,
+        "type": "folder" if is_folder else "file",
+        "absolute_path": full_path  # 便于后续输出重复结果
+    }
 
-def list_local_files(base_path):
-    records = []
-    index = 1
-    for root, dirs, files in os.walk(base_path):
+def scan_local_directory(path):
+    folders, files = [], []
+    for root, dirs, filenames in os.walk(path):
         dirs[:] = [d for d in dirs if not d.startswith('.') and not d.startswith('._')]
+        filenames = [f for f in filenames if not f.startswith('.') and not f.startswith('._')]
+        for d in dirs:
+            folders.append(get_file_info(path, root, d, is_folder=True))
+        for f in filenames:
+            files.append(get_file_info(path, root, f, is_folder=False))
+    return folders, files
+
+def compare_and_filter(local_files, target_files):
+    unique_files = []
+    duplicate_files = []
+    local_map = {f['filename']: f for f in local_files}
+    for tf in target_files:
+        lf = local_map.get(tf['filename'])
+        if lf and lf['size'] == tf['size']:
+            tf['duplicate_of'] = lf['absolute_path']
+            duplicate_files.append(tf)
+        else:
+            unique_files.append(tf)
+    return unique_files, duplicate_files
+
+def delete_remote_file(client, path, dry_run):
+    if dry_run:
+        logging.info(f"[DRY-RUN] 清除重复文件: {path}")
+    else:
+        logging.info(f"正在删除重复文件: {path}")
+        client.clean(path)
+
+def delete_empty_folders(path, dry_run):
+    for root, dirs, files in os.walk(path, topdown=False):
         for d in dirs:
             dir_path = os.path.join(root, d)
-            rel_path = os.path.relpath(dir_path, base_path)
-            file_count = sum([len(filenames) for _, _, filenames in os.walk(dir_path)])
-            records.append({
-                "index": index,
-                "filename": d,
-                "size": format_size(0),
-                "extension": "<folder>",
-                "relative_path": rel_path,
-                "file_count": file_count,
-                "type": "folder"
-            })
-            index += 1
-        for f in files:
-            if f.startswith('.') or f.startswith('._'):
-                continue
-            file_path = os.path.join(root, f)
-            rel_path = os.path.relpath(file_path, base_path)
-            size = os.path.getsize(file_path)
-            records.append({
-                "index": index,
-                "filename": f,
-                "size": format_size(size),
-                "extension": os.path.splitext(f)[1],
-                "relative_path": rel_path,
-                "type": "file"
-            })
-            index += 1
-    return records
+            if not os.listdir(dir_path):
+                if dry_run:
+                    logging.info(f"[DRY-RUN] 清除空文件夹: {dir_path}")
+                else:
+                    os.rmdir(dir_path)
+                    logging.info(f"删除空文件夹: {dir_path}")
 
-def list_remote_files(client, base='/'):
-    records = []
-    queue = [base]
-    index = 1
-    while queue:
-        current = queue.pop()
-        contents = client.list(current)
-        for item in contents:
-            if item in (current, current.rstrip('/') + '/'):
-                continue
-            if item.startswith('.') or item.startswith('._'):
-                continue
-            full_path = os.path.join(current, item).replace("\\", "/")
-            if client.check(full_path):
-                try:
-                    info = client.info(full_path)
-                    size = int(info.get('size', 0))
-                except Exception:
-                    size = 0
-                records.append({
-                    "index": index,
-                    "filename": os.path.basename(full_path),
-                    "size": format_size(size),
-                    "extension": os.path.splitext(full_path)[1],
-                    "relative_path": full_path.lstrip('/'),
-                    "type": "file"
-                })
-                index += 1
-            else:
-                queue.append(full_path)
-    return records
-
-def remove_remote_duplicates(client, local_files, remote_files, dry_run=False):
-    local_set = set((f["filename"], f["size"]) for f in local_files if f["type"] == "file")
-    removed = []
-
-    for rf in tqdm(remote_files, desc="🗑️ 删除远程重复文件" if not dry_run else "🔎 模拟删除重复文件"):
-        if rf["type"] != "file":
-            continue
-        if (rf["filename"], rf["size"]) in local_set:
-            remote_path = "/" + rf["relative_path"]
-            if dry_run:
-                removed.append(remote_path)
-            else:
-                try:
-                    client.clean(remote_path)
-                    removed.append(remote_path)
-                except Exception as e:
-                    print(f"[跳过] 删除失败 {remote_path}: {e}")
-    return removed
-
-def remove_empty_dirs(client, path='/', dry_run=False):
-    subitems = client.list(path)
-    for item in subitems:
-        full = os.path.join(path, item).replace("\\", "/")
-        if full in (path, path.rstrip('/') + '/'):
-            continue
-        if item.startswith('.') or item.startswith('._'):
-            continue
-        if not client.check(full):
-            remove_empty_dirs(client, full, dry_run=dry_run)
-            try:
-                if len(client.list(full)) == 1:
-                    if dry_run:
-                        print(f"🔎 模拟删除空目录：{full}")
-                    else:
-                        client.clean(full)
-            except Exception as e:
-                print(f"[跳过] 清空文件夹失败 {full}: {e}")
-
-def write_json(data, path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def save_json(folders, files, path):
+    folder_index, file_index = 1, 1
+    for f in folders:
+        f['folder_index'] = folder_index
+        folder_index += 1
+    for f in files:
+        f['file_index'] = file_index
+        file_index += 1
+    all_items = folders + files
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(all_items, f, indent=2, ensure_ascii=False)
+    logging.info(f"文件注册已保存: {path}")
 
 def main():
-    args = parse_args()
+    parser = argparse.ArgumentParser(description="比对相同文件并删除重复")
+    parser.add_argument('--local', required=True, help="本地目录")
+    parser.add_argument('--remote', help="WebDAV 路径")
+    parser.add_argument('--localtarget', help="用于比对的本地目标目录")
+    parser.add_argument('--username', help="WebDAV 用户名")
+    parser.add_argument('--password', help="WebDAV 密码")
+    parser.add_argument('--output', required=True, help="输出目录")
+    parser.add_argument('--dry-run', action='store_true', help="模拟操作")
+    args = parser.parse_args()
 
-    print("📂 正在遍历本地目录...")
-    local_files = list_local_files(args.local)
+    local_folders, local_files = scan_local_directory(args.local)
+    logging.info(f"本地文件夹扫描完成: {args.local}, 文件数: {len(local_files)}, 文件夹数: {len(local_folders)}")
 
-    print("🌐 正在连接 WebDAV...")
-    options = {
-        'webdav_hostname': args.remote,
-        'webdav_login': args.username,
-        'webdav_password': args.password,
-    }
-    client = Client(options)
+    if args.localtarget:
+        folders_target, files_target = scan_local_directory(args.localtarget)
+        logging.info(f"比对目标文件夹扫描完成: {args.localtarget}, 文件数: {len(files_target)}, 文件夹数: {len(folders_target)}")
+        unique_files, duplicate_files = compare_and_filter(local_files, files_target)
 
-    print("📁 正在遍历远程目录...")
-    remote_files = list_remote_files(client)
+        # 将 local 和 unique 合并写入 json
+        save_json(local_folders + folders_target, local_files + unique_files, os.path.join(args.output, "file_register.json"))
 
-    print("🗑️ 正在处理重复文件...")
-    removed = remove_remote_duplicates(client, local_files, remote_files, dry_run=args.dry_run)
+        # 写入 duplicate 文件
+        with open(os.path.join(args.output, "duplicate.json"), 'w', encoding='utf-8') as f:
+            json.dump(duplicate_files, f, indent=2, ensure_ascii=False)
+        logging.info(f"重复文件数: {len(duplicate_files)}")
 
-    print("🧹 正在清理空文件夹...")
-    remove_empty_dirs(client, dry_run=args.dry_run)
+        # 删除目标目录中的重复文件
+        for dup in duplicate_files:
+            delete_remote_file(None, dup['absolute_path'], args.dry_run)
 
-    print("💾 正在保存 JSON 文件...")
-    os.makedirs(args.output, exist_ok=True)
-    write_json(local_files, os.path.join(args.output, "local_files.json"))
-    write_json(remote_files, os.path.join(args.output, "remote_files.json"))
-    write_json(removed, os.path.join(args.output, "removed_files.json"))
+        # 删除目标目录中空文件夹
+        delete_empty_folders(args.localtarget, args.dry_run)
 
-    print("\n✅ 全部完成！结果输出至:", os.path.abspath(args.output))
-    if args.dry_run:
-        print("💡 本次为模拟运行，未执行任何删除操作。")
+    elif args.remote:
+        options = {
+            'webdav_hostname': args.remote,
+            'webdav_login': args.username,
+            'webdav_password': args.password
+        }
+        client = Client(options)
+        client.verify = False
+        # TODO: 读取 WebDAV 内容，类似扫描本地同样处理
+        logging.warning("WebDAV 利用部分未完成")
+    else:
+        logging.error("请指定 --remote 或 --localtarget")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

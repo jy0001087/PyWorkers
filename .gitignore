@@ -1,3 +1,4 @@
 *.log
 session*
 sync_log.txt
+Telegram下载/output/*
