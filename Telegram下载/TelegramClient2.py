@@ -16,8 +16,8 @@ from telethon.tl.types import (
 API_ID = 25270021
 API_HASH = 'e27d91ad37959d54eb5c1d454d567afa'
 SESSION = 'session'
-BASE_DIR = os.path.expanduser('~/Downloads/TelegramDownloads')
-REGISTER_FILE = os.path.expanduser('~/fileRegister.json')
+BASE_DIR = os.path.expanduser('/Volumes/壶中境/TGDown')
+REGISTER_FILE = os.path.expanduser('/Users/rfs/Documents/CodingWorkSpace/PyWorkers/Telegram下载/output/file_register.json')
 GROUPS = [
     'ezl80231s', #EZL群
     -1001981879084, #Rush无脑控吸资源群
