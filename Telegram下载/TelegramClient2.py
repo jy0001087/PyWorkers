@@ -28,7 +28,7 @@ GROUPS = [
     -1001971709345, #彪哥FakeM的狗窝
     -1002246826599, #无脑傻逼贡狗母蛆
     'kinkyboi8686', #ChasteBoy
-    'Feiyangs_zoo' #Feiyangs_zoo
+    'Feiyangs_zoo', #Feiyangs_zoo
     -1002284333043, #直男崇拜
     -1001400414058, #CHASTITY
     -1002274802303, #发泄粗狗
