@@ -83,12 +83,25 @@ def build_logger(chat_dir: str):
 
 async def download(sema, msg, folder, logger, registered):
     async with sema:
+        # 在访问 msg.file.name 之前，先检查 msg.file 是否为 None
+        if not msg.file:
+            logger.info(f"[SKIP] Message {msg.id} has no file.")
+            return
+
         fname = safe_name(msg.file.name or f"{msg.id}{MIME_MAP.get(msg.file.mime_type, '')}")
         if fname in registered or os.path.exists(os.path.join(folder, fname)):
             logger.info(f"[SKIP] {fname}")
             return
-        logger.info(f"[START] {fname}")
-        await msg.download_media(file=os.path.join(folder, fname))
+
+        total_size = msg.file.size
+        logger.info(f"[START] {fname} (Total size: {total_size / 1024 / 1024:.2f} MB)")
+        
+        async def progress_callback(current, total):
+            progress = int(current * 100 / total)
+            print(f"[PROGRESS] {fname}: {progress}% - {current / 1024 / 1024:.2f}/{total / 1024 / 1024:.2f} MB", end='\r')
+            
+        await msg.download_media(file=os.path.join(folder, fname), progress_callback=progress_callback)
+        print() # 换行，以便下一个日志行不会覆盖进度条
         logger.info(f"[DONE] {fname}")
 
 async def main():
