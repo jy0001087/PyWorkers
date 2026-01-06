@@ -18,28 +18,33 @@ API_HASH = 'e27d91ad37959d54eb5c1d454d567afa'
 SESSION = 'session'
 BASE_DIR = os.path.expanduser('/Users/rfs/Movies/TGDownload')
 REGISTER_FILE = os.path.expanduser('/Users/rfs/Documents/CodingWorkSpace/PyWorkers/Telegram下载/output/file_register.json')
+
 GROUPS = [
-    'mensheer', #meninsheer
-    'ezl80231s', #EZL群
-    -1001981879084, #Rush无脑控吸资源群
-    #'weiniduba1', #为你独霸-weiniduba1
-    -1002221790497, #粗口控r资源
+#    'mensheer', #meninsheer
+#    'ezl80231s', #EZL群
+#    -1001981879084, #Rush无脑控吸资源群
+#    'weiniduba1', #为你独霸-weiniduba1
+#    -1002221790497, #粗口控r资源
     -1001662972970, #搜同小说避难所
     -1002471335106, #彪哥FakeM的音频
     -1001971709345, #彪哥FakeM的狗窝
-    -1002246826599, #无脑傻逼贡狗母蛆
-    'kinkyboi8686', #ChasteBoy
-    'Feiyangs_zoo', #Feiyangs_zoo
+#    -1002246826599, #无脑傻逼贡狗母蛆
+#    'kinkyboi8686', #ChasteBoy
+#    'Feiyangs_zoo', #Feiyangs_zoo
     -1002284333043, #直男崇拜
-    -1001400414058, #CHASTITY
+#    -1001400414058, #CHASTITY
     -1002274802303, #发泄粗狗
-    -1002411845483, #控r视频
+#    -1002411845483, #控r视频
     -1002434627718, #彪哥资源备份群
-    -1001752547937, #全国镣铐同好
-    -1002478503978, #无脑傻逼
+#    -1001752547937, #全国镣铐同好
+#    -1002478503978, #无脑傻逼
     -1001697384627, #重度SM囚禁
-    -1001677932683 #早泄阳痿
+#    -1001677932683, #早泄阳痿
+    -1001693153191, #催眠服从是快乐的
+    -1001745485154, #Alpha tist
+    -1002491725238, #HypnotistJi_Official
 ]
+
 USE_PROXY = True
 PROXY = ('socks5', '127.0.0.1', 10800)
 CONCURRENCY = 4
