@@ -25,6 +25,7 @@ GROUPS = [
 #    -1001981879084, #Rush无脑控吸资源群
 #    'weiniduba1', #为你独霸-weiniduba1
 #    -1002221790497, #粗口控r资源
+    'cukou12', #爷们黑袜粗口控
     -1001662972970, #搜同小说避难所
     -1002471335106, #彪哥FakeM的音频
     -1001971709345, #彪哥FakeM的狗窝
@@ -89,12 +90,24 @@ def build_logger(chat_dir: str):
 
 async def download(sema, msg, folder, logger, registered):
     async with sema:
-        # 在访问 msg.file.name 之前，先检查 msg.file 是否为 None
         if not msg.file:
             logger.info(f"[SKIP] Message {msg.id} has no file.")
             return
 
-        fname = safe_name(msg.file.name or f"{msg.id}{MIME_MAP.get(msg.file.mime_type, '')}")
+        # 提取消息文本内容，作为新文件名前缀
+        msg_text = (msg.text or msg.caption or "").strip()
+        msg_text = safe_name(msg_text[:100])  # 限制长度为100字符，避免文件名过长
+        
+        # 获取原文件名和扩展名
+        orig_fname = msg.file.name or f"{msg.id}{MIME_MAP.get(msg.file.mime_type, '')}"
+        name_part, ext = os.path.splitext(orig_fname)
+        
+        # 组合新文件名：消息内容-原文件名.扩展名
+        if msg_text:
+            fname = safe_name(f"{msg_text}-{name_part}{ext}")
+        else:
+            fname = safe_name(f"{orig_fname}")
+        
         if fname in registered or os.path.exists(os.path.join(folder, fname)):
             logger.info(f"[SKIP] {fname}")
             return
