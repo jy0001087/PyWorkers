@@ -148,8 +148,7 @@ def main():
     if not os.path.exists(args.output):
         os.makedirs(args.output)
     
-    # ------------------ 修改部分开始 ------------------
-    # 1. 读取已注册文件
+    # 读取已注册文件
     registered_files = read_registered_files(args.output)
     existing_file_register_path = os.path.join(args.output, "file_register.json")
     existing_data = []
@@ -160,23 +159,26 @@ def main():
             except json.JSONDecodeError:
                 logging.warning("现有 file_register.json 文件损坏，将重新创建。")
                 existing_data = []
-    # ------------------ 修改部分结束 ------------------
 
     local_folders, local_files = scan_local_directory(args.local)
     logging.info(f"本地文件夹扫描完成: {args.local}, 文件数: {len(local_files)}, 文件夹数: {len(local_folders)}")
+
+    # 如果仅指定 --local 和 --output，直接更新 file_register.json
+    if not args.localtarget and not args.remote:
+        logging.info("仅更新本地文件注册表模式")
+        save_json(local_folders, local_files, existing_file_register_path, existing_data)
+        logging.info(f"文件注册表已更新: {existing_file_register_path}")
+        return
 
     if args.localtarget:
         folders_target, files_target = scan_local_directory(args.localtarget)
         logging.info(f"比对目标文件夹扫描完成: {args.localtarget}, 文件数: {len(files_target)}, 文件夹数: {len(folders_target)}")
         
-        # ------------------ 修改部分开始 ------------------
-        # 2. 调用修改后的比较函数
+        # 调用修改后的比较函数
         unique_files, duplicate_files = compare_and_filter(local_files, files_target, registered_files)
 
-        # 3. 将 local 和 unique 合并写入 json，并传递现有数据
-        # 传递 local_files，确保它们也被写入到注册文件中
+        # 将 local 和 unique 合并写入 json
         save_json(local_folders + folders_target, local_files + unique_files, existing_file_register_path, existing_data)
-        # ------------------ 修改部分结束 ------------------
 
         # 写入 duplicate 文件
         with open(os.path.join(args.output, "duplicate.json"), 'w', encoding='utf-8') as f:
@@ -185,7 +187,6 @@ def main():
 
         # 删除目标目录中的重复文件
         for dup in duplicate_files:
-            # 修改后的逻辑，对于本地文件直接使用 os.remove
             delete_remote_file(None, dup['absolute_path'], args.dry_run)
 
         # 删除目标目录中空文件夹
@@ -201,7 +202,6 @@ def main():
         client.verify = False
 
         # TODO: 读取 WebDAV 内容，类似扫描本地同样处理
-        # 在这里应该添加WebDAV扫描逻辑，并将结果与registered_files进行比较
         logging.warning("WebDAV 利用部分未完成")
     else:
         logging.error("请指定 --remote 或 --localtarget")
