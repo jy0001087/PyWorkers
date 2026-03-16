@@ -67,19 +67,6 @@ def safe_name(name: str, max_bytes=200) -> str:
         name = b[:max_bytes].decode('utf-8', errors='ignore')
     return name or 'unnamed'
 
-def build_msg_group_prefix(msg) -> str:
-    """从消息中提取分组前缀（如 grouped_id）"""
-    # 群组内的小分组（如相册中的同组媒体）通常用 grouped_id 表示
-    grouped_id = getattr(msg, 'grouped_id', None)
-    if grouped_id:
-        return f"[{grouped_id}]_"
-    # Telethon 有时可能在 media_group_id 或其它属性内
-    media_group_id = getattr(msg, 'media_group_id', None)
-    if media_group_id:
-        return f"[{media_group_id}]_"
-    return ''
-
-
 def load_register(path: str) -> set:
     """加载已注册文件列表"""
     try:
@@ -141,15 +128,12 @@ async def download(sema, msg, folder, logger, registered, max_retries=3):
         elif hasattr(msg, 'message') and msg.message:
             msg_text = msg.message.strip()
         
-        # 生成分组前缀
-        group_prefix = build_msg_group_prefix(msg)
-
         # 生成新文件名
         if msg_text:
             msg_text_safe = safe_name(msg_text[:100])
-            fname = safe_name(f"{group_prefix}{msg_text_safe}-{orig_fname}")
+            fname = safe_name(f"{msg_text_safe}-{orig_fname}")
         else:
-            fname = safe_name(f"{group_prefix}{orig_fname}")
+            fname = old_fname
         
         # 同时检查新旧文件名是否已存在或已注册
         file_path = os.path.join(folder, fname)
@@ -342,9 +326,8 @@ async def rename_existing_files_fast(all_messages, folder, logger, registered):
         if not msg_text:
             continue
 
-        group_prefix = build_msg_group_prefix(msg)
         msg_text_safe = safe_name(msg_text[:100])
-        new_fname = safe_name(f"{group_prefix}{msg_text_safe}-{orig_fname}")
+        new_fname = safe_name(f"{msg_text_safe}-{orig_fname}")
         new_file_path = os.path.join(folder, new_fname)
 
         # 如果新文件名相同，跳过
