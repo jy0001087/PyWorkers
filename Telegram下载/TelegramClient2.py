@@ -20,7 +20,14 @@ BASE_DIR = os.path.expanduser('//Volumes/壶中境/TGDownload')
 REGISTER_FILE = os.path.expanduser('/Users/rfs/Documents/CodingWorkSpace/PyWorkers/Telegram下载/output/file_register.json')
 
 GROUPS = [
-    'Y762XkSZPrRkMGE9'
+    -1003764726480, 
+    -1001985478835,
+    -1003308333812,
+    -1003031629535,
+    -1003488153527,
+    'kunyeatm',
+    -1002210091863,
+    'Y762XkSZPrRkMGE9',
     -1001796027030,
     'eduojiango',
     'cukou12',
