@@ -5,3 +5,5 @@ Telegram下载/output/*
 .DS_Store
 payload_dumper
 GLM-TTS
+__pycache__/
+*.pyc

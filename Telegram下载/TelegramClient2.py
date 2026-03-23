@@ -9,14 +9,16 @@ from telethon.tl.types import (
     InputMessagesFilterDocument,
     InputMessagesFilterVideo,
     InputMessagesFilterMusic,
-    InputMessagesFilterVoice
+    InputMessagesFilterVoice,
+    Channel
 )
+from telethon.tl.functions.channels import GetForumTopicsRequest
 
 # ======================== 配置 ========================
 API_ID = 25270021
 API_HASH = 'e27d91ad37959d54eb5c1d454d567afa'
 SESSION = 'session'
-BASE_DIR = os.path.expanduser('//Volumes/壶中境/TGDownload')
+BASE_DIR = os.path.expanduser('/Users/rfs/Documents/TGDownload')
 REGISTER_FILE = os.path.expanduser('/Users/rfs/Documents/CodingWorkSpace/PyWorkers/Telegram下载/output/file_register.json')
 
 GROUPS = [
@@ -58,6 +60,90 @@ MIME_MAP = {
     'audio/mpeg': '.mp3',
     'application/zip': '.zip',
 }
+
+# Telegram 下载/TelegramClient2.py
+
+async def get_channel_folders(client):
+    """
+    获取用户的频道文件夹分类（Telegram Folders）
+    注意：这需要 Telegram API 支持，且可能因权限限制无法获取
+    """
+    try:
+        from telethon.tl.functions.messages import GetDialogsRequest
+        from telethon.tl.types import Folder
+        
+        # 获取所有对话文件夹
+        dialogs = await client.get_dialogs()
+        folders = await client.get_folders() if hasattr(client, 'get_folders') else []
+        
+        print(f"[INFO] 获取到 {len(folders)} 个文件夹分类")
+        return folders
+    except Exception as e:
+        print(f"[ERROR] 获取文件夹分类失败: {e}")
+        return []
+
+
+async def analyze_message_categories(client, chat, messages=None):
+    """
+    基于消息内容分析频道的内部分类
+    通过关键词、媒体类型等对消息进行自动分类
+    """
+    try:
+        # 如果未提供消息列表，则获取最近的消息
+        if messages is None:
+            messages = await client.get_messages(chat, limit=500)
+        
+        if not messages:
+            print(f"[INFO] 没有消息可以分析")
+            return {}
+        
+        # 定义分类规则
+        categories = {
+            '视频': 0,
+            '音频': 0,
+            '文档': 0,
+            '图片': 0,
+            '语音': 0,
+            '普通消息': 0,
+            '链接': 0,
+            '其他': 0
+        }
+        
+        for msg in messages:
+            if msg.file:
+                mime_type = msg.file.mime_type or ''
+                if 'video' in mime_type:
+                    categories['视频'] += 1
+                elif 'audio' in mime_type:
+                    categories['音频'] += 1
+                elif 'image' in mime_type:
+                    categories['图片'] += 1
+                elif 'voice' in mime_type:
+                    categories['语音'] += 1
+                elif 'pdf' in mime_type or 'document' in mime_type:
+                    categories['文档'] += 1
+                else:
+                    categories['其他'] += 1
+            elif msg.text:
+                text = msg.text.lower()
+                if any(link in text for link in ['http://', 'https://', 'tg://']):
+                    categories['链接'] += 1
+                else:
+                    categories['普通消息'] += 1
+            else:
+                categories['其他'] += 1
+        
+        total = len(messages)
+        print(f"[INFO] 频道内容分析 (共 {total} 条消息):")
+        for category, count in categories.items():
+            percentage = (count / total * 100) if total > 0 else 0
+            print(f"  - {category}: {count} ({percentage:.1f}%)")
+        
+        return categories
+        
+    except Exception as e:
+        print(f"[ERROR] 分析消息分类失败: {e}")
+        return {}
 
 def safe_name(name: str, max_bytes=200) -> str:
     """安全的文件名处理"""
@@ -107,6 +193,195 @@ def build_logger(chat_dir: str):
     handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
     return logger
+
+
+def _tme_chat_id_from_entity(entity):
+    """
+    频道链接在 t.me/c/ 下的 ID 计算：
+    Telethon entity.id 可能是 -1003764726480
+    t.me/c/: 3764726480 (去掉 -100 前缀)
+    """
+    cid = getattr(entity, 'id', None)
+    if cid is None:
+        return None
+    s = str(abs(int(cid)))
+    if s.startswith('100'):
+        # Telethon 超级群/频道 id 前缀 100
+        return s[3:]
+    return s
+
+
+async def get_channel_topics(client, chat, sample_limit=200, thread_message_limit=5):
+    """
+    1) 获取 channel entity
+    2) 如果是论坛频道，先尝试获取论坛 topics 列表
+    3) 取 sample_messages 的 message_thread_id
+    4) 统计每个 thread 的消息数，生成 t.me/c 链接
+    """
+    print(f"[DEBUG] 开始获取 {chat} 的 topics")
+    entity = await client.get_entity(chat)
+    print(f"[DEBUG] Entity 类型: {type(entity).__name__}, ID: {getattr(entity, 'id', None)}, Title: {getattr(entity, 'title', None)}")
+    if not isinstance(entity, Channel):
+        print(f"[DEBUG] 非 Channel 类型，跳过 topics 获取")
+        return []
+
+    # 检查是否是论坛频道
+    is_forum = getattr(entity, 'forum', False)
+    print(f"[DEBUG] is_forum: {is_forum}")
+
+    topics = []
+
+    if is_forum:
+        print(f"[DEBUG] 是论坛频道，尝试获取论坛 topics 列表")
+        try:
+            # 使用 GetForumTopicsRequest 获取论坛 topics
+            result = await client(GetForumTopicsRequest(
+                channel=entity,
+                offset_date=None,
+                offset_id=0,
+                offset_topic=0,
+                limit=100  # 获取前100个topics
+            ))
+            forum_topics = result.topics
+            print(f"[DEBUG] 获取到论坛 topics: {len(forum_topics) if forum_topics else 0}")
+            if forum_topics:
+                tme_chat_id = _tme_chat_id_from_entity(entity)
+                for topic in forum_topics:
+                    topic_id = getattr(topic, 'id', None)
+                    if topic_id:
+                        topic_link = f"https://t.me/c/{tme_chat_id}/{topic_id}" if tme_chat_id else None
+                        topics.append({
+                            'topic_id': topic_id,
+                            'topic_title': getattr(topic, 'title', ''),
+                            'topic_link': topic_link,
+                            'message_count': getattr(topic, 'count', 0),
+                        })
+                print(f"[DEBUG] 从论坛 topics 列表获取到 {len(topics)} 个 topics")
+        except Exception as e:
+            print(f"[DEBUG] 获取论坛 topics 列表失败: {e}")
+
+    # 如果没有从论坛 topics 列表获取到，尝试从消息中提取 thread_id
+    if not topics:
+        print(f"[DEBUG] 从论坛 topics 列表未获取到，尝试从消息中提取 thread_id")
+        # 取所有 message，thread_id 做话题分类
+        print(f"[DEBUG] 获取 sample_messages, limit={sample_limit}")
+        sample_messages = await client.get_messages(chat, limit=sample_limit)
+        print(f"[DEBUG] 获取到 {len(sample_messages)} 条消息")
+        
+        thread_ids = [m.message_thread_id for m in sample_messages if getattr(m, 'message_thread_id', None)]
+        print(f"[DEBUG] 找到的 thread_ids: {thread_ids}")
+        topic_ids = sorted(set(thread_ids))
+        print(f"[DEBUG] 去重后的 topic_ids: {topic_ids}")
+
+        if topic_ids:
+            # 生成基础 t.me 链接 ID
+            tme_chat_id = _tme_chat_id_from_entity(entity)
+            print(f"[DEBUG] 计算的 t.me chat_id: {tme_chat_id}")
+
+            for tpid in topic_ids:
+                print(f"[DEBUG] 处理 topic_id: {tpid}")
+                # 可选：每个 thread 做一个快速 count
+                count = 0
+                if tpid:
+                    try:
+                        msgs = await client.get_messages(chat, limit=1, message_thread_id=tpid)
+                        print(f"[DEBUG] topic {tpid} 的消息: {len(msgs) if msgs else 0}")
+                        # Telethon 会返回当前 thread 的最新消息，若有则算作存在
+                        if msgs:
+                            # 为了避免额外耗时，只返回 thread 中存在即认为 >0
+                            count = await client.get_messages(chat, limit=1, message_thread_id=tpid).total if hasattr(msgs, 'total') else 0
+                    except Exception as e:
+                        print(f"[DEBUG] 获取 topic {tpid} 消息失败: {e}")
+                        pass
+
+                topic_link = None
+                if tme_chat_id:
+                    topic_link = f"https://t.me/c/{tme_chat_id}/{tpid}"
+                    print(f"[DEBUG] 生成 topic_link: {topic_link}")
+
+                topics.append({
+                    'topic_id': tpid,
+                    'topic_link': topic_link,
+                    'message_count': count,
+                })
+
+    if not topics:
+        print(f"[DEBUG] 没有找到任何 topics")
+
+    print(f"[DEBUG] 返回 topics: {topics}")
+    return topics
+
+
+async def get_group_structure_info(client, chat):
+    """
+    重新设计的结构获取：
+    - 先判断 group 类型 (Channel, Chat 等)
+    - 根据类型获取相应分类信息 (topics, folders 等)
+    - 生成可直接点开的 t.me/c 链接
+    - 附加类别统计、文件夹结构
+    """
+    print(f"[DEBUG] 开始获取 {chat} 的结构信息")
+    try:
+        entity = await client.get_entity(chat)
+        print(f"[DEBUG] 获取到 entity: {type(entity).__name__}")
+        structure_info = {
+            'chat_id': getattr(entity, 'id', None),
+            'chat_title': getattr(entity, 'title', None),
+            'chat_type': type(entity).__name__,
+            'is_channel': isinstance(entity, Channel),
+            'is_forum': getattr(entity, 'forum', False),
+            'has_restricted_content': getattr(entity, 'has_restricted_content', False),
+            'has_family': getattr(entity, 'has_geo', False),  # 只是继续记录，不做话题判定
+            'has_topics': False,
+            'topics': [],
+            'topic_count': 0,
+            'content_categories': {},
+            'folder_groups': [],
+            'raw_entity': {},  # 方便 Debug
+        }
+
+        # 记录 entity 的重要字段，方便调试版本差异
+        try:
+            structure_info['raw_entity'] = {k: getattr(entity, k, None) for k in ['id', 'title', 'username', 'broadcast', 'megagroup', 'has_geo', 'has_forum', 'is_forum', 'has_restricted_content']}
+            print(f"[DEBUG] raw_entity: {structure_info['raw_entity']}")
+        except Exception:
+            structure_info['raw_entity'] = {}
+
+        # 根据类型获取分类信息
+        if isinstance(entity, Channel):
+            print(f"[DEBUG] 是 Channel 类型，开始获取 topics 和 folders")
+            # 对于频道，检查 topics 和 folders
+            topics = await get_channel_topics(client, chat)
+            print(f"[DEBUG] 获取到 topics: {len(topics) if topics else 0}")
+            if topics:
+                structure_info['has_topics'] = True
+                structure_info['topic_count'] = len(topics)
+                structure_info['topics'] = topics
+            # 频道文件夹分组（如果客户端支持）
+            structure_info['folder_groups'] = await get_channel_folders(client) or []
+            print(f"[DEBUG] 获取到 folder_groups: {len(structure_info['folder_groups'])}")
+        else:
+            print(f"[DEBUG] 非 Channel 类型，跳过 topics 获取")
+            # 对于其他类型（如 Chat），可能没有 topics，但可以检查其他分类
+            structure_info['has_topics'] = False
+            structure_info['topics'] = []
+            structure_info['topic_count'] = 0
+            # 可以添加其他分类逻辑，如消息类型等
+
+        # 内容类型统计（适用于所有类型）
+        print(f"[DEBUG] 开始获取内容分类")
+        structure_info['content_categories'] = await analyze_message_categories(client, chat) or {}
+        print(f"[DEBUG] 内容分类: {structure_info['content_categories']}")
+
+        print(f"[DEBUG] 结构信息获取完成")
+        return structure_info
+
+    except Exception as e:
+        print(f"[ERROR] get_group_structure_info 失败: {e}")
+        return {
+            'error': str(e),
+            'chat': str(chat),
+        }
 
 async def download(sema, msg, folder, logger, registered, max_retries=3):
     """下载文件，支持重试"""
@@ -205,7 +480,7 @@ async def download(sema, msg, folder, logger, registered, max_retries=3):
                 else:
                     logger.error(f"[FAILED] {fname} 已放弃，超过最大重试次数")
 
-async def get_all_messages(client, chat, filters):
+async def get_all_messages(client, chat, filters, thread_id=None):
     """获取所有指定类型的消息（分页）"""
     all_messages = []
     seen_message_ids = set()
@@ -219,7 +494,8 @@ async def get_all_messages(client, chat, filters):
                     limit=MAX_MSG_PER_TYPE,
                     offset_id=offset_id,
                     filter=f,
-                    reverse=False
+                    reverse=False,
+                    reply_to=thread_id
                 )
                 if not messages:
                     break
@@ -375,41 +651,93 @@ async def main():
             print(f"[ERROR] 无法访问 {gid}: {e}")
             continue
 
+        # 获取 group 详细信息和分类情况
+        print(f"\n=== 获取 {gid} 的详细信息 ===")
+        structure_info = await get_group_structure_info(client, chat)
+        print(f"Group 详细信息: {json.dumps(structure_info, ensure_ascii=False, indent=2)}")
+
         folder = os.path.join(BASE_DIR, safe_name(chat.title or str(chat.id)))
         os.makedirs(folder, exist_ok=True)
         logger = build_logger(folder)
 
-        # 获取所有消息（仅一次）
-        logger.info("=== 开始获取消息 ===")
-        all_messages = await get_all_messages(
-            client,
-            chat,
-            (InputMessagesFilterDocument, InputMessagesFilterVideo,
-             InputMessagesFilterMusic, InputMessagesFilterVoice)
-        )
-        logger.info(f"获取到 {len(all_messages)} 条消息")
+        # 如果有topics，遍历每个topic进行下载
+        if structure_info.get('has_topics') and structure_info.get('topics'):
+            for topic in structure_info['topics']:
+                topic_id = topic['topic_id']
+                topic_title = topic['topic_title']
+                print(f"\n=== 处理 Topic: {topic_title} (ID: {topic_id}) ===")
+                
+                topic_folder = os.path.join(folder, safe_name(topic_title))
+                os.makedirs(topic_folder, exist_ok=True)
+                topic_logger = build_logger(topic_folder)
 
-        if not all_messages:
-            logger.warning("未获取到任何消息")
-            continue
+                # 获取该topic的消息
+                topic_logger.info(f"=== 开始获取 Topic {topic_title} 的消息 ===")
+                all_messages = await get_all_messages(
+                    client,
+                    chat,
+                    (InputMessagesFilterDocument, InputMessagesFilterVideo,
+                     InputMessagesFilterMusic, InputMessagesFilterVoice),
+                    thread_id=topic_id
+                )
+                topic_logger.info(f"获取到 {len(all_messages)} 条消息")
 
-        # 先重命名已存在的旧文件
-        logger.info("=== 开始重命名已下载文件 ===")
-        await rename_existing_files_fast(all_messages, folder, logger, registered)
+                if not all_messages:
+                    topic_logger.warning(f"Topic {topic_title} 未获取到任何消息")
+                    continue
 
-        # 再下载新文件
-        logger.info("=== 开始下载新文件 ===")
-        msgs = []
-        for msg in all_messages:
-            msg_key = (gid, msg.id)
-            if msg_key not in seen_ids:
-                msgs.append(msg)
-                seen_ids.add(msg_key)
+                # 先重命名已存在的旧文件
+                topic_logger.info("=== 开始重命名已下载文件 ===")
+                await rename_existing_files_fast(all_messages, topic_folder, topic_logger, registered)
 
-        if msgs:
-            await asyncio.gather(*[download(sema, m, folder, logger, registered) for m in msgs])
+                # 再下载新文件
+                topic_logger.info("=== 开始下载新文件 ===")
+                msgs = []
+                for msg in all_messages:
+                    msg_key = (gid, topic_id, msg.id)
+                    if msg_key not in seen_ids:
+                        msgs.append(msg)
+                        seen_ids.add(msg_key)
+
+                if msgs:
+                    await asyncio.gather(*[download(sema, m, topic_folder, topic_logger, registered) for m in msgs])
+                else:
+                    topic_logger.info("无新文件需要下载")
+                
+                topic_logger.info("=== Topic 完成 ===")
         else:
-            logger.info("无新文件需要下载")
+            # 如果没有topics，按原逻辑处理整个频道
+            # 获取所有消息（仅一次）
+            logger.info("=== 开始获取消息 ===")
+            all_messages = await get_all_messages(
+                client,
+                chat,
+                (InputMessagesFilterDocument, InputMessagesFilterVideo,
+                 InputMessagesFilterMusic, InputMessagesFilterVoice)
+            )
+            logger.info(f"获取到 {len(all_messages)} 条消息")
+
+            if not all_messages:
+                logger.warning("未获取到任何消息")
+                continue
+
+            # 先重命名已存在的旧文件
+            logger.info("=== 开始重命名已下载文件 ===")
+            await rename_existing_files_fast(all_messages, folder, logger, registered)
+
+            # 再下载新文件
+            logger.info("=== 开始下载新文件 ===")
+            msgs = []
+            for msg in all_messages:
+                msg_key = (gid, msg.id)
+                if msg_key not in seen_ids:
+                    msgs.append(msg)
+                    seen_ids.add(msg_key)
+
+            if msgs:
+                await asyncio.gather(*[download(sema, m, folder, logger, registered) for m in msgs])
+            else:
+                logger.info("无新文件需要下载")
         
         logger.info("=== 完成 ===")
     
