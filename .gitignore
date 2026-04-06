@@ -7,3 +7,4 @@ payload_dumper
 GLM-TTS
 __pycache__/
 *.pyc
+.vscode/
