@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import logging
+import re
 from telethon.tl.types import (
     InputMessagesFilterDocument,
     InputMessagesFilterVideo,
@@ -14,7 +15,8 @@ from config import GROUPS, BASE_DIR, MAX_MSG_PER_TYPE, REGISTER_FILE
 from pathlib import Path
 
 # 导入新的日志管理模块
-from telegram_logger import get_group_logger, get_topic_logger, get_main_logger
+from telegram_logger import get_main_logger
+from down_media import download_and_register
 
 # 获取主日志记录器
 main_logger = get_main_logger()
@@ -61,24 +63,22 @@ async def get_messages_with_retry(client, chat, filter_type, reply_to=None, offs
     
     return all_messages
 
-async def get_media_info_from_chat(client, chat, folder, logger, reply_to=None):
+async def get_media_info_from_chat(client, chat, folder, reply_to=None, group_name=None, topic_name=None):
     """
-    从群组或话题中获取媒体文件信息（不下载）
+    从群组或话题中获取媒体文件信息并下载
     
     Args:
         client (TelegramClient): Telegram 客户端实例
         chat: 群组/频道实体
         folder (str): 存储文件夹路径
-        logger: 日志记录器
         reply_to: 回复消息ID（用于话题），None表示获取整个群组的消息
-    
-    Returns:
-        dict: 媒体文件信息统计
+        group_name: 群组名称
+        topic_name: 话题名称
     """
     if reply_to is None:
-        logger.info(f"=== 开始获取 {chat.title or str(chat.id)} 的媒体信息 ===")
+        main_logger.info(f"=== 开始获取 {chat.title or str(chat.id)} 的媒体信息 ===")
     else:
-        logger.info(f"=== 开始获取 Topic 的媒体信息 ===")
+        main_logger.info(f"=== 开始获取 Topic 的媒体信息 ===")
     
     # 获取所有消息（仅一次）
     filters = (
@@ -129,9 +129,26 @@ async def get_media_info_from_chat(client, chat, folder, logger, reply_to=None):
                         continue
                     
                     total_messages += 1
+                    
+                    # 处理文件名：Telethon 对部分文件类型（如视频）可能不返回 name
+                    raw_name = getattr(msg.file, 'name', None)
+                    if not raw_name:
+                        ext = msg.file.ext or ''
+                        raw_name = f"media_{msg.id}{ext}"
+                    
+                    # 获取消息文本内容并清理非法文件名字符
+                    msg_text = getattr(msg, 'message', '') or ''
+                    if msg_text:
+                        # 移除文件名非法字符，限制长度
+                        clean_text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', msg_text.strip())
+                        clean_text = clean_text[:50]  # 限制文本长度防止文件名过长
+                        # 插入文本内容到扩展名之前
+                        name_part, ext_part = os.path.splitext(raw_name)
+                        raw_name = f"{name_part}_{clean_text}{ext_part}"
+                    
                     file_info = {
                         'id': msg.id,
-                        'file_name': msg.file.name,
+                        'file_name': raw_name,
                         'mime_type': msg.file.mime_type,
                         'size': msg.file.size,
                         'date': msg.date.isoformat() if hasattr(msg, 'date') and msg.date else None
@@ -149,35 +166,38 @@ async def get_media_info_from_chat(client, chat, folder, logger, reply_to=None):
                         media_stats['voice'] += 1
                         
                     media_stats['files'].append(file_info)
+                    
+                    # 下载文件
+                    await download_and_register(client, msg, folder, raw_name, group_name, topic_name)
                 
                 if len(messages) < MAX_MSG_PER_TYPE:
                     break
                 
                 offset_id = messages[-1].id
             except Exception as e:
-                logger.error(f"获取消息失败: {e}")
+                main_logger.error(f"获取消息失败: {e}")
                 # 添加重试机制
                 await asyncio.sleep(1)
                 continue
     
     media_stats['total'] = total_messages
-    logger.info(f"获取到 {total_messages} 条媒体消息")
+    main_logger.info(f"获取到 {total_messages} 条媒体消息")
     
-    logger.info(f"媒体统计信息:")
-    logger.info(f"  总计: {media_stats['total']}")
-    logger.info(f"  视频: {media_stats['videos']}")
-    logger.info(f"  文档: {media_stats['documents']}")
-    logger.info(f"  音频: {media_stats['audio']}")
-    logger.info(f"  语音: {media_stats['voice']}")
+    main_logger.info(f"媒体统计信息:")
+    main_logger.info(f"  总计: {media_stats['total']}")
+    main_logger.info(f"  视频: {media_stats['videos']}")
+    main_logger.info(f"  文档: {media_stats['documents']}")
+    main_logger.info(f"  音频: {media_stats['audio']}")
+    main_logger.info(f"  语音: {media_stats['voice']}")
     
     # 保存统计信息到文件
     stats_file = os.path.join(folder, 'media_stats.json')
     try:
         with open(stats_file, 'w', encoding='utf-8') as f:
             json.dump(media_stats, f, ensure_ascii=False, indent=2)
-        logger.info(f"统计信息已保存到: {stats_file}")
+        main_logger.info(f"统计信息已保存到: {stats_file}")
     except Exception as e:
-        logger.error(f"保存统计信息失败: {e}")
+        main_logger.error(f"保存统计信息失败: {e}")
         raise
     
     return media_stats
@@ -201,21 +221,23 @@ async def get_all_media_info():
             'groups': []
         }
         
+        total_groups = len(GROUPS)
+        processed_groups = 0
+        
         for gid in GROUPS:
+            processed_groups += 1
             try:
                 chat = await get_entity_info(client, gid)
                 if not chat:
+                    processed_groups -= 1
                     continue
                     
                 # 获取 group 详细信息和分类情况
-                main_logger.info(f"=== 获取 {gid} 的详细信息 ===")
+                main_logger.info(f"[{processed_groups}/{total_groups}] 获取 {gid} 的详细信息")
                 
                 # 创建群组文件夹
                 group_folder = os.path.join(BASE_DIR, chat.title or str(chat.id))
                 os.makedirs(group_folder, exist_ok=True)
-                
-                # 获取群组日志记录器
-                group_logger = get_group_logger(chat.title or str(chat.id), gid)
                 
                 # 检查是否有话题
                 topics = await get_channel_topics(client, chat)
@@ -230,21 +252,22 @@ async def get_all_media_info():
                 }
                 
                 if topics:
+                    total_topics = len(topics)
+                    processed_topics = 0
                     # 遍历每个话题
                     for topic in topics:
+                        processed_topics += 1
                         topic_id = topic['topic_id']
                         topic_title = topic['topic_title']
-                        main_logger.info(f"=== 处理 Topic: {topic_title} (ID: {topic_id}) ===")
+                        main_logger.info(f"  [{processed_groups}/{total_groups}] 群组 -> [{processed_topics}/{total_topics}] Topic: {topic_title} (ID: {topic_id})")
                         
                         topic_folder = os.path.join(group_folder, topic_title)
                         os.makedirs(topic_folder, exist_ok=True)
                         
-                        # 获取话题日志记录器
-                        topic_logger = get_topic_logger(chat.title or str(chat.id), gid, topic_title, topic_id)
-                        
                         # 获取话题媒体信息
                         topic_stats = await get_media_info_from_chat(
-                            client, chat, topic_folder, topic_logger, reply_to=topic['topic_id']
+                            client, chat, topic_folder, reply_to=topic['topic_id'],
+                            group_name=chat.title or str(chat.id), topic_name=topic_title
                         )
                         
                         topic_info = {
@@ -256,9 +279,10 @@ async def get_all_media_info():
                         
                 else:
                     # 如果没有话题，获取整个群组的媒体信息
-                    main_logger.info(f"=== 处理群组: {chat.title or str(chat.id)} ===")
+                    main_logger.info(f"  [{processed_groups}/{total_groups}] 处理群组: {chat.title or str(chat.id)}")
                     group_stats = await get_media_info_from_chat(
-                        client, chat, group_folder, group_logger
+                        client, chat, group_folder,
+                        group_name=chat.title or str(chat.id), topic_name=None
                     )
                     group_info['media_stats'] = group_stats
                 

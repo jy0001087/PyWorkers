@@ -26,7 +26,7 @@ MAX_MSG_PER_TYPE: int = 200
 
 # 4. 文件路径配置
 # 脚本根目录（相对于当前运行位置）
-BASE_DIR: Path = Path('/Users/rfs/Documents/Syncthing-SyncFiles/风陵渡/非礼勿视')
+BASE_DIR: Path = Path('/Users/rfs/Documents/TGDownload')
 
 # 注册表文件路径，用于记录已下载的文件名，防止重复下载
 REGISTER_FILE: Path = Path('/Users/rfs/Documents/Syncthing-SyncFiles/风陵渡/非礼勿视/file_register.json')

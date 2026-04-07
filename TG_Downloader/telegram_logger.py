@@ -56,28 +56,15 @@ def get_group_logger(group_name, group_id):
     Returns:
         logging.Logger: 群组日志记录器
     """
-    # 使用当前日期时间作为文件名的一部分
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = f"logs/{group_name}_{group_id}_{timestamp}.log"
+    # 日志统一归集到 logs 目录，文件名由群组名称和ID决定
+    log_file = f"logs/{group_name}_{group_id}.log"
     return setup_logger(f"group_{group_id}", log_file)
 
 def get_topic_logger(group_name, group_id, topic_title, topic_id):
     """
-    获取话题日志记录器
-    
-    Args:
-        group_name (str): 群组名称
-        group_id (str): 群组ID
-        topic_title (str): 话题标题
-        topic_id (str): 话题ID
-    
-    Returns:
-        logging.Logger: 话题日志记录器
+    获取话题日志记录器（日志归集到群组日志中）
     """
-    # 使用当前日期时间作为文件名的一部分
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = f"logs/{group_name}_{topic_title}_{group_id}_{topic_id}_{timestamp}.log"
-    return setup_logger(f"topic_{topic_id}", log_file)
+    return get_group_logger(group_name, group_id)
 
 def get_main_logger():
     """

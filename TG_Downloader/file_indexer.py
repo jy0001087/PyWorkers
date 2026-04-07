@@ -156,22 +156,54 @@ def scan_existing_files():
     
     main_logger.info(f"总共需要扫描 {total_files} 个文件")
     
+    # 统一转为字符串用于比较（Path 与 str 比较永远为 False）
+    register_file_str = str(REGISTER_FILE)
+    base_dir_str = str(BASE_DIR)
+    
+    main_logger.info(f"注册文件路径: {register_file_str}")
+    main_logger.info(f"注册文件已存在: {os.path.exists(register_file_str)}")
+    main_logger.info(f"现有注册数据群组数: {len(existing_data)}")
+    
     file_count = 0
     new_file_count = 0
     removed_count = 0
     processed_count = 0
+    skipped_exists = 0
+    last_saved_new_count = 0
+    
+    def save_register():
+        nonlocal last_saved_new_count
+        try:
+            os.makedirs(os.path.dirname(register_file_str), exist_ok=True)
+            with open(register_file_str, 'w', encoding='utf-8') as f:
+                json.dump(existing_data, f, ensure_ascii=False, indent=2)
+            main_logger.info(f"注册文件已保存，累计新增 {new_file_count} 个，移除 {removed_count} 个")
+            last_saved_new_count = new_file_count
+        except Exception as e:
+            main_logger.error(f"保存注册文件失败: {e}")
+    
+    # 统一转为字符串用于比较（Path 与 str 比较永远为 False）
+    register_file_str = str(REGISTER_FILE)
+    base_dir_str = str(BASE_DIR)
     
     # 递归扫描所有文件
-    for root, dirs, files in os.walk(BASE_DIR):
+    for root, dirs, files in os.walk(base_dir_str):
+        # 过滤掉隐藏目录（如 .Spotlight-V100, .Trash 等）
+        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        
         # 跳过注册文件本身
-        if root == BASE_DIR and REGISTER_FILE in files:
+        if root == base_dir_str and os.path.basename(register_file_str) in files:
             continue
             
         for file in files:
+            # 忽略 macOS 自动生成的隐藏文件（如 .DS_Store, ._filename）
+            if file.startswith('.'):
+                continue
+            
             file_path = os.path.join(root, file)
             
             # 跳过注册文件
-            if file_path == REGISTER_FILE:
+            if file_path == register_file_str:
                 continue
             
             # 提取群组和话题信息
@@ -184,9 +216,26 @@ def scan_existing_files():
             # 对媒体文件进行完整性检查
             if is_media_file(file_path):
                 if not check_media_integrity(file_path):
-                    main_logger.warning(f"检测到疑似损坏的媒体文件，移入隔离区: {file_path}")
                     try:
-                        # 移入隔离区而不是直接删除
+                        file_size = os.path.getsize(file_path)
+                        file_hash = None
+                        # 尝试从现有记录中获取 hash
+                        if group_name in existing_data:
+                            for t_files in existing_data[group_name].values():
+                                for f_info in t_files:
+                                    if f_info.get('file_name') == file:
+                                        file_hash = f_info.get('file_hash')
+                                        break
+                                if file_hash:
+                                    break
+                        
+                        main_logger.warning(f"检测到疑似损坏的媒体文件: {file_path}")
+                        main_logger.warning(f"  文件名: {file}")
+                        main_logger.warning(f"  群组: {group_name}, 话题: {topic_name}")
+                        main_logger.warning(f"  大小: {file_size} bytes")
+                        main_logger.warning(f"  Hash: {file_hash}")
+                        
+                        # 移入隔离区
                         corrupted_dir = os.path.join(BASE_DIR, '_corrupted')
                         os.makedirs(corrupted_dir, exist_ok=True)
                         
@@ -224,6 +273,7 @@ def scan_existing_files():
             # 如果文件已存在，则跳过计算hash值
             if exists:
                 file_count += 1
+                skipped_exists += 1
                 main_logger.debug(f"文件已存在，跳过处理: {file_path}")
             else:
                 # 计算文件hash值
@@ -255,16 +305,14 @@ def scan_existing_files():
             processed_count += 1
             if processed_count % 10 == 0:
                 main_logger.info(f"已处理 {processed_count}/{total_files} 个文件")
+            
+            if new_file_count - last_saved_new_count >= 100:
+                save_register()
     
-    # 在有新增文件或删除损坏文件时写入注册文件
-    if new_file_count > 0 or removed_count > 0:
-        try:
-            with open(REGISTER_FILE, 'w', encoding='utf-8') as f:
-                json.dump(existing_data, f, ensure_ascii=False, indent=2)
-            main_logger.info(f"成功更新注册文件，新增 {new_file_count} 个文件，删除 {removed_count} 个损坏文件，共处理 {file_count} 个文件")
-        except Exception as e:
-            main_logger.error(f"保存注册文件失败: {e}")
-            return 0
+    # 扫描完成后最终写入
+    main_logger.info(f"扫描统计: 总处理 {file_count}, 新增 {new_file_count}, 已存在跳过 {skipped_exists}, 损坏移除 {removed_count}")
+    if new_file_count > last_saved_new_count or removed_count > 0:
+        save_register()
     else:
         main_logger.info(f"无新增或损坏文件，跳过写入注册文件，共扫描 {file_count} 个文件")
     
