@@ -66,21 +66,12 @@ async def get_messages_with_retry(client, chat, filter_type, reply_to=None, offs
 async def get_media_info_from_chat(client, chat, folder, reply_to=None, group_name=None, topic_name=None):
     """
     从群组或话题中获取媒体文件信息并下载
-    
-    Args:
-        client (TelegramClient): Telegram 客户端实例
-        chat: 群组/频道实体
-        folder (str): 存储文件夹路径
-        reply_to: 回复消息ID（用于话题），None表示获取整个群组的消息
-        group_name: 群组名称
-        topic_name: 话题名称
     """
     if reply_to is None:
         main_logger.info(f"=== 开始获取 {chat.title or str(chat.id)} 的媒体信息 ===")
     else:
         main_logger.info(f"=== 开始获取 Topic 的媒体信息 ===")
     
-    # 获取所有消息（仅一次）
     filters = (
         InputMessagesFilterDocument,
         InputMessagesFilterVideo,
@@ -88,8 +79,6 @@ async def get_media_info_from_chat(client, chat, folder, reply_to=None, group_na
         InputMessagesFilterVoice
     )
     
-    # 使用生成器方式处理消息，避免一次性加载所有消息到内存
-    total_messages = 0
     media_stats = {
         'total': 0,
         'videos': 0,
@@ -99,9 +88,10 @@ async def get_media_info_from_chat(client, chat, folder, reply_to=None, group_na
         'files': []
     }
     
-    # 用于去重的集合
     processed_message_ids = set()
+    all_media_messages = []
     
+    # 1. 获取所有符合条件的媒体消息
     for f in filters:
         offset_id = 0
         while True:
@@ -117,58 +107,10 @@ async def get_media_info_from_chat(client, chat, folder, reply_to=None, group_na
                 if not messages:
                     break
                 
-                # 逐个处理消息，避免内存溢出
                 for msg in messages:
-                    # 跳过已处理的消息（去重）
-                    if msg.id in processed_message_ids:
-                        continue
-                    
-                    processed_message_ids.add(msg.id)
-                    
-                    if not msg.file:
-                        continue
-                    
-                    total_messages += 1
-                    
-                    # 处理文件名：Telethon 对部分文件类型（如视频）可能不返回 name
-                    raw_name = getattr(msg.file, 'name', None)
-                    if not raw_name:
-                        ext = msg.file.ext or ''
-                        raw_name = f"media_{msg.id}{ext}"
-                    
-                    # 获取消息文本内容并清理非法文件名字符
-                    msg_text = getattr(msg, 'message', '') or ''
-                    if msg_text:
-                        # 移除文件名非法字符，限制长度
-                        clean_text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', msg_text.strip())
-                        clean_text = clean_text[:50]  # 限制文本长度防止文件名过长
-                        # 插入文本内容到扩展名之前
-                        name_part, ext_part = os.path.splitext(raw_name)
-                        raw_name = f"{name_part}_{clean_text}{ext_part}"
-                    
-                    file_info = {
-                        'id': msg.id,
-                        'file_name': raw_name,
-                        'mime_type': msg.file.mime_type,
-                        'size': msg.file.size,
-                        'date': msg.date.isoformat() if hasattr(msg, 'date') and msg.date else None
-                    }
-                    
-                    # 统计文件类型
-                    mime_type = msg.file.mime_type or ''
-                    if 'video' in mime_type:
-                        media_stats['videos'] += 1
-                    elif 'document' in mime_type:
-                        media_stats['documents'] += 1
-                    elif 'audio' in mime_type:
-                        media_stats['audio'] += 1
-                    elif 'voice' in mime_type:
-                        media_stats['voice'] += 1
-                        
-                    media_stats['files'].append(file_info)
-                    
-                    # 下载文件
-                    await download_and_register(client, msg, folder, raw_name, group_name, topic_name)
+                    if msg.id not in processed_message_ids and msg.file:
+                        processed_message_ids.add(msg.id)
+                        all_media_messages.append(msg)
                 
                 if len(messages) < MAX_MSG_PER_TYPE:
                     break
@@ -176,12 +118,44 @@ async def get_media_info_from_chat(client, chat, folder, reply_to=None, group_na
                 offset_id = messages[-1].id
             except Exception as e:
                 main_logger.error(f"获取消息失败: {e}")
-                # 添加重试机制
                 await asyncio.sleep(1)
                 continue
+
+    # 2. 统计总数并逐个处理
+    total_files_to_download = len(all_media_messages)
+    for idx, msg in enumerate(all_media_messages, 1):
+        raw_name = getattr(msg.file, 'name', None)
+        if not raw_name:
+            ext = msg.file.ext or ''
+            raw_name = f"media_{msg.id}{ext}"
+        
+        msg_text = getattr(msg, 'message', '') or ''
+        if msg_text:
+            clean_text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', msg_text.strip())
+            clean_text = clean_text[:50]
+            name_part, ext_part = os.path.splitext(raw_name)
+            raw_name = f"{name_part}_{clean_text}{ext_part}"
+        
+        mime_type = msg.file.mime_type or ''
+        if 'video' in mime_type: media_stats['videos'] += 1
+        elif 'document' in mime_type: media_stats['documents'] += 1
+        elif 'audio' in mime_type: media_stats['audio'] += 1
+        elif 'voice' in mime_type: media_stats['voice'] += 1
+        
+        file_info = {
+            'id': msg.id,
+            'file_name': raw_name,
+            'mime_type': msg.file.mime_type,
+            'size': msg.file.size,
+            'date': msg.date.isoformat() if hasattr(msg, 'date') and msg.date else None
+        }
+        media_stats['files'].append(file_info)
+        
+        main_logger.info(f"正在下载 ({idx}/{total_files_to_download}): {raw_name}")
+        await download_and_register(client, msg, folder, raw_name, group_name, topic_name)
     
-    media_stats['total'] = total_messages
-    main_logger.info(f"获取到 {total_messages} 条媒体消息")
+    media_stats['total'] = total_files_to_download
+    main_logger.info(f"获取到 {total_files_to_download} 条媒体消息")
     
     main_logger.info(f"媒体统计信息:")
     main_logger.info(f"  总计: {media_stats['total']}")
@@ -190,7 +164,6 @@ async def get_media_info_from_chat(client, chat, folder, reply_to=None, group_na
     main_logger.info(f"  音频: {media_stats['audio']}")
     main_logger.info(f"  语音: {media_stats['voice']}")
     
-    # 保存统计信息到文件
     stats_file = os.path.join(folder, 'media_stats.json')
     try:
         with open(stats_file, 'w', encoding='utf-8') as f:
@@ -201,6 +174,7 @@ async def get_media_info_from_chat(client, chat, folder, reply_to=None, group_na
         raise
     
     return media_stats
+
 
 async def get_all_media_info():
     """

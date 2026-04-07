@@ -40,9 +40,25 @@ async def download_and_register(client, msg, folder, file_name, group_name, topi
     # 3. 执行下载
     try:
         main_logger.info(f"正在下载: {file_name}")
+        
+        start_time = asyncio.get_event_loop().time()
+
+        async def progress_callback(current, total):
+            nonlocal start_time
+            elapsed = asyncio.get_event_loop().time() - start_time
+            speed = (current / 1024 / 1024) / elapsed if elapsed > 0 else 0
+            
+            percent = (current / total * 100) if total > 0 else 0
+            current_mb = current / 1024 / 1024
+            total_mb = total / 1024 / 1024
+            
+            print(f"\r下载进度 [{file_name}]: {percent:.2f}% - {current_mb:.2f}/{total_mb:.2f} MB ({speed:.2f} MB/s)", end='', flush=True)
+
         # Telethon 自动处理断点续传
-        await client.download_media(msg, file=save_path)
+        await client.download_media(msg, file=save_path, progress_callback=progress_callback)
+        print() # 换行
         main_logger.info(f"下载成功: {file_name}")
+
     except Exception as e:
         main_logger.error(f"下载失败 {file_name}: {e}")
         # 清理可能的损坏文件
