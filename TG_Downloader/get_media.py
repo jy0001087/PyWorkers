@@ -151,7 +151,8 @@ async def get_media_info_from_chat(client, chat, folder, reply_to=None, group_na
         }
         media_stats['files'].append(file_info)
         
-        main_logger.info(f"正在下载 ({idx}/{total_files_to_download}): {raw_name}")
+        # 处理媒体文件
+        main_logger.info(f"正在处理 ({idx}/{total_files_to_download}): {raw_name}")
         await download_and_register(client, msg, folder, raw_name, group_name, topic_name)
     
     media_stats['total'] = total_files_to_download

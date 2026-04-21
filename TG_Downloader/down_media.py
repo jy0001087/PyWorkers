@@ -75,7 +75,7 @@ async def download_and_register(client, msg, folder, file_name, group_name, topi
         if not file_hash:
             main_logger.warning(f"计算 Hash 失败，无法注册: {file_name}")
             return
-
+        
         file_info = {
             'file_name': file_name,
             'group_name': group_name,
